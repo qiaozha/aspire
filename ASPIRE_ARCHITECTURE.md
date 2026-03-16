@@ -29,11 +29,16 @@ Organized for progressive understanding: start with the big picture, then dive i
 7. [Azure Integration & Bicep Generation](#7-azure-integration--bicep-generation)
    - [The C# Integration API](#the-c-integration-api)
    - [What Is the Azure.Provisioning SDK?](#what-is-the-azureprovisioning-sdk)
+   - [How the Provisioning CDK Connects to the AppHost API](#how-the-provisioning-cdk-connects-to-the-apphost-api)
    - [How Bicep Is Generated: The Three-Layer Stack](#how-bicep-is-generated-the-three-layer-stack)
    - [How the Provisioning Library Communicates (In-Process, Not RPC)](#how-the-provisioning-library-communicates-in-process-not-rpc)
    - [Two Deployment Paths](#two-deployment-paths)
    - [Full Azure Resource Lifecycle Mapping](#full-azure-resource-lifecycle-mapping)
    - [Why the AppHost Must Run for Bicep Generation](#why-the-apphost-must-run-for-bicep-generation)
+   - [The Two-Description Problem: CDK vs. App Model](#the-two-description-problem-cdk-vs-app-model)
+   - [Why Not Unify Them as a Single Source of Truth?](#why-not-unify-them-as-a-single-source-of-truth)
+   - [What Can the Synthesis World Infer from the Orchestration World?](#what-can-the-synthesis-world-infer-from-the-orchestration-world)
+   - [Can the Orchestration World Be Inferred from the Synthesis World?](#can-the-orchestration-world-be-inferred-from-the-synthesis-world)
 8. [Polyglot AppHost: Guest Runtime Interaction (ATS)](#8-polyglot-apphost-guest-runtime-interaction)
    - [The Key Design Principle](#the-key-design-principle)
    - [The 3-Process Architecture](#the-3-process-architecture)
@@ -646,18 +651,19 @@ AzurePublishingContext (publish mode):
 
 ### Why the AppHost Must Run for Bicep Generation
 
-The App Host is a C# program that **imperitavely builds the resource model at runtime**. Things like:
+This is not a quirk — it is the standard **synthesis model** used by all code-as-infrastructure tools. In AWS CDK, you run `cdk synth` to execute your CDK app and produce CloudFormation. In Pulumi, `pulumi preview` runs your Pulumi program. In Aspire, `aspire publish` runs the AppHost in publish mode to produce Bicep.
 
-```csharp
-builder.AddAzureKeyVault("kv")
-    .ConfigureInfrastructure(infra => {
-        // This is a live C# lambda — not serializable, cannot be statically analyzed
-        var kv = infra.GetProvisionableResources().OfType<KeyVault>().Single();
-        kv.Properties.EnablePurgeProtection = true;
-    });
+**The AppHost is the synthesis runtime. Running it is the synthesis step.**
+
+```
+AWS CDK:    cdk synth        → executes your CDK app code    → emits CloudFormation YAML
+Pulumi:     pulumi preview   → executes your Pulumi program  → emits resource plan
+Aspire:     aspire publish   → executes the AppHost          → emits Bicep modules
 ```
 
-The `ConfigureInfrastructure` callback is a live C# delegate. There is no way to execute it without running the App Host process. The full `DistributedApplicationModel` only exists in memory after the App Host starts up.
+The `ConfigureInfrastructure` lambda is the infrastructure definition — the equivalent of a CDK construct body. It is a closure that reads configuration state accumulated by the full infrastructure definition code before it runs. This state (e.g., which blob containers were declared, whether HNS is enabled, whether private endpoints are attached) is the output of the synthesis-time execution, not something that needs to pre-exist in Azure.
+
+This is also why the AppHost starts in a special `PublishMode` — DCP is skipped (no local containers, no dashboard), because synthesis does not require the local runtime. Only the infrastructure definition code needs to execute.
 
 **The publish flow end-to-end:**
 
@@ -682,6 +688,260 @@ aspire publish (CLI)
 ```
 
 The backchannel is for **progress reporting only** — all Bicep generation happens inside the App Host process.
+
+---
+
+### How the Provisioning CDK Connects to the AppHost API
+
+The bridge is `AzureResourceInfrastructure`, which **inherits directly from `Azure.Provisioning.Infrastructure`**:
+
+```
+Azure.Provisioning.Infrastructure          ← from azure-sdk-for-net/sdk/provisioning/
+        ▲
+        │ inherits
+AzureResourceInfrastructure               ← src/Aspire.Hosting.Azure/AzureResourceInfrastructure.cs
+        │
+        └── AspireResource property        ← links back to AzureProvisioningResource (the Aspire node)
+```
+
+There are two key handoff points:
+
+**Handoff 1: `ConfigureInfrastructure` stores CDK objects (at registration time)**
+
+```csharp
+// src/Aspire.Hosting.Azure.Storage/AzureStorageExtensions.cs
+var configureInfrastructure = (AzureResourceInfrastructure infrastructure) =>
+{
+    // Azure.Provisioning.Storage.StorageAccount ← CDK type from azure-sdk-for-net
+    var storageAccount = new StorageAccount(...)
+    {
+        Kind = StorageKind.StorageV2,
+        Sku = new StorageSku() { Name = StorageSkuName.StandardGrs },
+        ...
+    };
+    infrastructure.Add(storageAccount);   // ← Infrastructure.Add() — pure Azure.Provisioning call
+
+    // CDK outputs declared here — names must match BicepOutputReference properties on the resource class
+    infrastructure.Add(new ProvisioningOutput("blobEndpoint", typeof(string))
+        { Value = storageAccount.PrimaryEndpoints.BlobUri.ToBicepExpression() });
+};
+
+// The lambda is stored; the CDK objects inside are NOT created yet
+var resource = new AzureStorageResource(name, configureInfrastructure);
+return builder.AddResource(resource);
+```
+
+The lambda is only executed when `GetBicepTemplateFile()` is called at deploy/publish time (see [How Bicep Is Generated](#how-bicep-is-generated-the-three-layer-stack) and [Full Azure Resource Lifecycle Mapping](#full-azure-resource-lifecycle-mapping) for the full execution flow).
+
+**Handoff 2: `BicepOutputReference` reads ARM deployment outputs back into the Aspire model**
+
+After ARM deployment completes, the provisioner reads the output values by name into `resource.Outputs[key]`. `BicepOutputReference("blobEndpoint", resource)` resolves to that value when any consumer calls `GetValueAsync()`. This is the return path: CDK defines what outputs exist; the resource class declares typed properties that consume them by name.
+
+---
+
+### The Two-Description Problem: CDK vs. App Model
+
+An Aspire integration author must maintain **two parallel descriptions** of the same Azure resource:
+
+| | CDK `ConfigureInfrastructure` callback | Aspire resource class |
+|---|---|---|
+| **Purpose** | Emit Bicep text (what Azure infrastructure exists) | App model node (DAG, references, DI wiring) |
+| **Executes when** | Publish/deploy time only | Registration time (always) |
+| **Types used** | `Azure.Provisioning.*` CDK types | `IResource`, `IResourceWithConnectionString`, etc. |
+| **What it produces** | `.bicep` file on disk | Entry in `DistributedApplicationModel.Resources` |
+| **Coupling point** | emits `ProvisioningOutput("blobEndpoint")` | reads `new BicepOutputReference("blobEndpoint", this)` |
+
+The coupling between the two is a **plain string** — the output name. There is no compiler enforcement. If an author adds `ProvisioningOutput("connectionString")` in the CDK callback but forgets the matching `BicepOutputReference("connectionString", this)` property on the resource class, it compiles fine and fails only at runtime.
+
+**Storage as concrete example:**
+
+```
+ConfigureInfrastructure (CDK side)               AzureStorageResource class (Aspire side)
+─────────────────────────────────────            ─────────────────────────────────────────
+ProvisioningOutput("blobEndpoint", ...)   ←→     BicepOutputReference("blobEndpoint", this)
+ProvisioningOutput("queueEndpoint", ...)  ←→     BicepOutputReference("queueEndpoint", this)
+ProvisioningOutput("tableEndpoint", ...)  ←→     BicepOutputReference("tableEndpoint", this)
+ProvisioningOutput("dataLakeEndpoint", .) ←→     BicepOutputReference("dataLakeEndpoint", this)
+ProvisioningOutput("name", ...)           ←→     BicepOutputReference("name", this)
+ProvisioningOutput("id", ...)             ←→     BicepOutputReference("id", this)
+```
+
+The two layers are independent — CDK types are never directly converted into Aspire `IResource` objects. They serve different roles:
+
+```
+CDK types used inside ConfigureInfrastructure    Role
+──────────────────────────────────────────────   ───────────────────────────────────────────────
+StorageAccount                                   ARM resource; emits blobEndpoint/queueEndpoint outputs
+BlobService                                      ARM hierarchy node (parent of BlobContainers in Bicep)
+QueueService                                     ARM hierarchy node (parent of Queues in Bicep)
+TableService                                     ARM hierarchy node (parent of Tables in Bicep)
+FileShareService                                 Not used in Aspire's storage integration
+
+Aspire IResource registrations (via builder.AddResource())
+──────────────────────────────────────────────────────────
+AzureStorageResource                             Top-level storage node; consumes blobEndpoint/queueEndpoint outputs
+AzureBlobStorageResource                         Exposes blob endpoint to app consumers  (via AddBlobs())
+AzureQueueStorageResource                        Exposes queue endpoint                  (via AddQueues())
+AzureTableStorageResource                        Exposes table endpoint                  (via AddTables())
+AzureBlobStorageContainerResource                Individual container access              (via AddBlobContainer())
+```
+
+Notice that no CDK type maps directly to an Aspire `IResource` type — they are parallel designs. The only link between the two columns is the `ProvisioningOutput`/`BicepOutputReference` string coupling shown in the table above.
+
+---
+
+### Why Not Unify Them as a Single Source of Truth?
+
+**The root cause: Aspire serves two masters, CDK serves one.**
+
+The `cdk synth` analogy explains the publish path, but CDK only has one output target — CloudFormation. A CDK `Bucket` construct doesn't need to do anything at development time: it doesn't appear in a dashboard, it doesn't resolve connection strings for local dev, it doesn't participate in `WithReference()` wiring.
+
+Aspire has two completely separate output targets:
+
+```
+aspire publish  →  ConfigureInfrastructure lambda  →  Bicep file on disk (for Azure deployment)
+aspire run      →  AzureStorageResource class       →  live app graph node (for local dev, dashboard,
+                                                        service discovery, WithReference())
+```
+
+`aspire run` never executes the CDK lambda at all. The `AzureStorageResource` resolves its blob endpoint from a local Azurite container. `aspire publish` runs the CDK lambda and ignores local containers entirely. These are two fundamentally different modes of the same resource type, with no overlap at runtime.
+
+A `StorageAccount` CDK construct cannot express "I am an Azurite container in local mode" — it is a Bicep emission tool, not a runtime-aware app node. This is the irreducible reason two descriptions must exist: the orchestration world (`aspire run`) and the synthesis world (`aspire publish`) need different types.
+
+The three tensions below are consequences of this root split:
+
+**Tension 1: Different lifetimes**
+
+The Aspire resource class must exist from the moment `AddAzureStorage()` is called — it enters `DistributedApplicationModel` immediately and is used by DCP, the dashboard, `WithReference()`, and health checks. The CDK callback only runs at deploy/publish time. A single unified type would need to be simultaneously a live in-memory app node and a deferred Bicep description.
+
+**Tension 2: `BicepOutputReference` values exist only after ARM deployment**
+
+`BicepOutputReference("blobEndpoint")` resolves to a concrete URL only after ARM deployment completes. During `aspire run` with a local Azurite emulator, there is no deployment — the same `AzureStorageResource` resolves connection strings from the container's ports. A CDK type has no way to express "I'm a `StorageAccount` under Bicep AND I'm an Azurite endpoint in local mode."
+
+**Tension 3: The CDK is a Bicep emission tool, not an app model**
+
+`Azure.Provisioning.Storage.StorageAccount` exposes ~200 ARM properties. The Aspire resource class consciously surfaces only 4 (`BlobEndpoint`, `QueueEndpoint`, `TableEndpoint`, `DataLakeEndpoint`). That reduction is editorial judgment — it cannot be derived from the ARM schema.
+
+**What partial unification already exists:**
+
+The `AzurePublishingContext` does traverse `IValueWithReferences` on the Aspire model to discover which `BicepOutputReference` values are actually consumed, so the main Bicep module's outputs are demand-driven rather than exhaustive. But the reverse (CDK → auto-generating typed resource properties) has no equivalent mechanism, because `ConfigureInfrastructure` is a runtime lambda that cannot be statically analyzed.
+
+A source generator that runs the AppHost in "schema mode" to introspect the CDK output graph and auto-generate `BicepOutputReference` properties is theoretically possible but introduces the same complexity as `aspire sdk generate` — at that point you'd also need the server to be running to reflect on the lambda, defeating the purpose.
+
+**The current design is a deliberate tradeoff**: accept string-coupling between `ProvisioningOutput` names and `BicepOutputReference` names in exchange for keeping two fundamentally different concerns (Bicep emission vs. app model) in clearly separate layers.
+
+---
+
+### What Can the Synthesis World Infer from the Orchestration World?
+
+**User intent (topology) is already inferred — the irreducible gap is ARM schema knowledge.**
+
+The `ConfigureInfrastructure` lambda already reads heavily from the orchestration-world resource:
+
+```csharp
+// All of these come from the AzureStorageResource populated at registration time:
+azureResource.IsHnsEnabled           → StorageAccount.IsHierarchicalNamespaceEnabled
+azureResource.BlobContainers         → loop: blobContainer.ToProvisioningEntity() per container
+azureResource.DataLakeFileSystems    → loop: dataLakeFileSystem.ToProvisioningEntity() per FS
+azureResource.Queues                 → loop: queue.ToProvisioningEntity() per queue
+azureResource.TableStorageBuilder    → creates TableService if not null
+azureResource.HasAnnotation<PrivateEndpointTargetAnnotation>() → NetworkRuleSet.DefaultAction
+```
+
+`ToProvisioningEntity()` on leaf resource types (`AzureBlobStorageContainerResource`, `AzureQueueStorageQueueResource`) is already a mechanical bridge — it converts the Aspire representation directly into a CDK object. This works because those leaf types have a 1:1 obvious correspondence with their ARM equivalents.
+
+**What the lambda must supply that cannot be inferred:**
+
+```csharp
+// ARM schema choices — not expressible in the app model:
+Kind = StorageKind.StorageV2         // what "storage" means in ARM taxonomy
+Sku = StorageSkuName.StandardGrs    // default SKU — editorial judgment
+MinimumTlsVersion = Tls1_2         // security compliance default
+AllowSharedKeyAccess = false        // security default
+
+// ARM hierarchy knowledge:
+new BlobService("blobs") { Parent = storageAccount }
+    // BlobService is a required ARM parent node for BlobContainer;
+    // the app model has no concept of this intermediate node
+
+// ARM property path knowledge:
+storageAccount.PrimaryEndpoints.BlobUri.ToBicepExpression()
+    // which of ~200 StorageAccount properties maps to "blobEndpoint"
+    // — requires reading ARM API documentation, not derivable from app model types
+```
+
+The orchestration world says: *"there is an Azure Storage resource with 3 blob containers and HNS off."* It says nothing about ARM resource `kind`, SKU, TLS policy, the `BlobService` hierarchy node that ARM requires as a parent for containers, or which `PrimaryEndpoints.*` property path emits the blob URL.
+
+**The structural reason the gap is irreducible:**
+
+The Aspire app model intentionally stays abstract — it expresses developer intent (*"I want blob storage"*), not Azure ARM vocabulary. `StorageV2`, `StandardGrs`, `Tls1_2` are ARM taxonomy terms with no Aspire equivalents. The CDK lambda is precisely where that ARM vocabulary gets introduced. The work of encoding ARM schema knowledge doesn't disappear if you change the representation — it just moves somewhere else (a declarative config file, a code generator, a convention table). The C# lambda is the current encoding of that knowledge.
+
+This is also why `ToProvisioningEntity()` only exists on simple leaf resources where the mapping is 1:1 and mechanical, while the top-level `AzureStorageResource` has no `ToProvisioningEntity()` — its CDK creation requires authorial judgment about ARM defaults that cannot be mechanically derived.
+
+---
+
+### Can the Orchestration World Be Inferred from the Synthesis World?
+
+**No — the synthesis world is a lossy, one-way projection of the orchestration world.**
+
+**Reason 1: The CDK lambda is a field on the orchestration-world object and takes it as input**
+
+The `configureInfrastructure` lambda captures `azureResource` by closure and is stored as a field on `AzureStorageResource`. You cannot call the lambda without the orchestration-world object already existing. There is no synthesis world without the orchestration world — the dependency is structurally one-directional.
+
+**Reason 2: The sub-resource consumer hierarchy is completely absent from CDK**
+
+`AzureBlobStorageResource` is an Aspire `IResource` with `IResourceWithConnectionString` and `IResourceWithParent<AzureStorageResource>` — it exists so consuming services can call `WithReference(blobStorage)` and receive the correct endpoint injected as an environment variable.
+
+In the CDK world, `BlobService` is an ARM hierarchy node required as a parent for `BlobContainer` entries in Bicep. It has no consumer-endpoint semantics. Nothing in the emitted Bicep says "there is a blob consumer endpoint that other services reference". You cannot derive the existence of `AzureBlobStorageResource` (or `AzureQueueStorageResource`, `AzureTableStorageResource`) from the CDK output:
+
+```
+Orchestration world (Aspire IResource hierarchy)    Synthesis world (ARM hierarchy in Bicep)
+────────────────────────────────────────────────    ─────────────────────────────────────────
+AzureStorageResource                                StorageAccount
+  AzureBlobStorageResource          ✗ no equivalent → (BlobService is an ARM structural node,
+  AzureQueueStorageResource         ✗ no equivalent      not a consumer endpoint resource)
+  AzureTableStorageResource         ✗ no equivalent
+  AzureBlobStorageContainerResource ←→ BlobContainer  (1:1 leaf — ToProvisioningEntity() exists)
+  AzureQueueStorageQueueResource    ←→ StorageQueue    (1:1 leaf — ToProvisioningEntity() exists)
+```
+
+The three sub-resources for blob, queue, and table access simply do not exist in the CDK world.
+
+**Reason 3: Dual-mode endpoint resolution lives only in the orchestration world**
+
+`AzureStorageResource.BlobUriExpression` switches at runtime:
+
+```csharp
+public ReferenceExpression BlobUriExpression => IsEmulator
+    ? ReferenceExpression.Create($"{EmulatorBlobEndpoint.Property(EndpointProperty.Url)}")
+    : ReferenceExpression.Create($"{BlobEndpoint}");
+```
+
+`EmulatorBlobEndpoint` is an `EndpointReference(this, "blob")` that resolves to the Azurite container's port 10000. The synthesis world only knows about the Azure path (`BlobEndpoint` → `ProvisioningOutput("blobEndpoint")`). There is nothing in any CDK type or emitted Bicep that encodes "port 10000 is the local blob endpoint". `aspire run` uses this path for every service that has `WithReference(blobStorage)` — it is entirely invisible to synthesis.
+
+**Reason 4: Annotations are consumed and discarded by the lambda**
+
+`PrivateEndpointTargetAnnotation` is read by the lambda and changes `NetworkRuleSet.DefaultAction = Deny` in the Bicep output. After that read, the annotation is gone — it never appears in any CDK type or in the emitted Bicep text. You cannot reconstruct the presence or absence of this annotation (or any other annotation: health check config, resource relationship annotations, emulator annotations) from the synthesis output.
+
+**Reason 5: Connection string format knowledge is orchestration-world-only**
+
+The `AzureBlobStorageResource` implements `IResourceWithConnectionString` with connection string formats that differ across three modes:
+- Emulator: full connection string with blob/queue/table ports
+- Azure standard client: `Endpoint={blobEndpoint}`
+- Azure Functions: separate `blobServiceUri` + `queueServiceUri` environment variable keys
+
+None of this formatting logic appears in the CDK or the emitted Bicep. The synthesis world outputs a raw URL string — the orchestration world knows where and how different SDK clients expect to consume it.
+
+**Summary: what the synthesis world permanently loses**
+
+| Orchestration-world concept | Synthesis-world equivalent |
+|---|---|
+| `AzureBlobStorageResource` (consumer endpoint IResource) | Nothing — `BlobService` is an unrelated ARM node |
+| `EndpointReference` to Azurite port 10000 | Not representable in CDK/Bicep |
+| `PrivateEndpointTargetAnnotation` annotation | Consumed, not emitted |
+| Connection string format per SDK / per mode | Not representable in CDK/Bicep |
+| `WithReference()` injection wiring | Not representable in CDK/Bicep |
+| Azure Functions env var naming (`__blobServiceUri`) | Not representable in CDK/Bicep |
 
 ---
 
@@ -980,6 +1240,78 @@ No CLI changes needed — adding the NuGet package to `aspire.json` is the only 
 | Host → Guest callbacks | ATS JSON-RPC `invokeCallback` | Reverse direction on same connection |
 | Handle lifecycle | AppHost server handle registry | Valid until server exits |
 | All Aspire integrations | .NET server process | Guest sees them as typed SDK methods |
+
+---
+
+### How TypeScript Provisioning Libraries Interact with AppHost Server APIs
+
+> **Q: If I define infrastructure with TypeScript provisioning libraries, how do TypeScript CDK models get recognized by server APIs like `addStorageAccount` and actually add a storage account?**
+
+TypeScript provisioning libraries are **not standalone CDKs that define resources directly**. They are thin proxy wrappers — every API call crosses the JSON-RPC boundary to the .NET AppHost Server, which holds the real resource model and the only copy of the `Azure.Provisioning` CDK.
+
+**What makes a method available in TypeScript:**
+
+The binding mechanism is `[AspireExport]` on the C# side:
+
+```csharp
+// src/Aspire.Hosting.Azure.Storage/AzureStorageExtensions.cs
+[AspireExport("addAzureStorage", Description = "Adds an Azure Storage resource")]
+public static IResourceBuilder<AzureStorageResource> AddAzureStorage(
+    this IDistributedApplicationBuilder builder, [ResourceName] string name)
+{ ... }
+```
+
+At startup, `AtsCapabilityScanner` reflects over all loaded assemblies, finds every `[AspireExport]`-annotated method, and registers it in `CapabilityDispatcher` as `"Aspire.Hosting.Azure.Storage/addAzureStorage"`. The TypeScript SDK is generated from this same reflection pass — the TypeScript method name is always in sync with the .NET capability ID.
+
+**Call trace for `builder.addAzureStorage("my-storage")`:**
+
+```
+TypeScript apphost.ts                      .NET AppHost Server (RemoteHost)
+─────────────────────                      ────────────────────────────────
+const storage = await
+  builder.addAzureStorage("my-storage")
+        │
+        │  invokeCapability(
+        │    "Aspire.Hosting.Azure.Storage/addAzureStorage",
+        │    { builder: { $handle: "1" }, name: "my-storage" }
+        │  )  ──── JSON-RPC over Unix socket ────────────────►
+        │                                                     │
+        │                               CapabilityDispatcher.InvokeAsync()
+        │                                                     │
+        │                               1. Looks up handle "1"
+        │                                  → actual IDistributedApplicationBuilder
+        │                               2. Invokes via reflection:
+        │                                  AzureStorageExtensions.AddAzureStorage(
+        │                                    builder, "my-storage")
+        │                               3. Creates AzureStorageResource in the
+        │                                  in-memory DistributedApplicationModel
+        │                               4. Attaches ConfigureInfrastructure callback
+        │                                  (a C# lambda → generates Bicep later)
+        │                               5. Registers result handle "2"
+        │
+        │◄─── { "$handle": "2", "$type": "...AzureStorageResource" }
+        │
+    TypeScript holds opaque handle "2".
+    Azure.Provisioning CDK, Bicep generation, and
+    ARM deployment run 100% in .NET. TypeScript never
+    sees or instantiates any CDK objects.
+```
+
+**TypeScript is always a proxy — it never holds deserialized resource objects:**
+
+- Every `await builder.addSomethingAzure(...)` → JSON-RPC → real C# extension method runs in .NET server → `AzureXResource` enters .NET `DistributedApplicationModel`
+- TypeScript holds only an opaque `$handle` string
+- `ConfigureInfrastructure` callbacks, Bicep generation, and ARM deployment all execute exclusively in the .NET process
+- The generated `.modules/aspire.ts` is the complete TypeScript surface; every method in it corresponds 1:1 to a `[AspireExport]`-annotated C# method
+
+**To add a new Azure resource type accessible from TypeScript**, you must ship both sides:
+
+| Layer | What to write |
+|-------|--------------|
+| **C# (.NET)** | `MyResource : AzureProvisioningResource`, extension method with `[AspireExport("addMyResource")]`, `ConfigureInfrastructure` callback using `Azure.Provisioning.*` CDK types |
+| **TypeScript (generated)** | Run `aspire sdk generate` — reflects the C# assembly and generates the TypeScript wrapper that calls `invokeCapability("YourAssembly/addMyResource", ...)` |
+
+The TypeScript library is then purely a proxy — it holds handles and routes calls. All provisioning logic stays in .NET.
 
 ---
 
