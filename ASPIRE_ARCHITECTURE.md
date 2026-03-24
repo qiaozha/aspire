@@ -9,57 +9,57 @@ Organized for progressive understanding: start with the big picture, then dive i
 
 1. [What Is Aspire?](#1-what-is-aspire)
 2. [High-Level Architecture](#2-high-level-architecture)
-   - [Layered Diagram](#layered-diagram)
-   - [Repository Layout](#repository-layout)
-   - [Key Architectural Principles](#key-architectural-principles)
+    - [Layered Diagram](#layered-diagram)
+    - [Repository Layout](#repository-layout)
+    - [Key Architectural Principles](#key-architectural-principles)
 3. [The Application Model (`DistributedApplicationModel`)](#3-the-application-model)
-   - [IResource — The Fundamental Unit](#iresource--the-fundamental-unit)
-   - [Annotations — The Extensibility Mechanism](#annotations--the-extensibility-mechanism)
-   - [Standard Capability Interfaces](#standard-capability-interfaces)
-   - [The Value/Reference System — How the DAG Forms](#the-valuereference-system--how-the-dag-forms)
-   - [Build Phase vs. Deployment Phase: Deferred Evaluation](#build-phase-vs-deployment-phase-deferred-evaluation)
-   - [Design Philosophy: Inert Data + External Orchestration](#design-philosophy-inert-data--external-orchestration)
+    - [IResource — The Fundamental Unit](#iresource--the-fundamental-unit)
+    - [Annotations — The Extensibility Mechanism](#annotations--the-extensibility-mechanism)
+    - [Standard Capability Interfaces](#standard-capability-interfaces)
+    - [The Value/Reference System — How the DAG Forms](#the-valuereference-system--how-the-dag-forms)
+    - [Build Phase vs. Deployment Phase: Deferred Evaluation](#build-phase-vs-deployment-phase-deferred-evaluation)
+    - [Design Philosophy: Inert Data + External Orchestration](#design-philosophy-inert-data--external-orchestration)
 4. [Local Orchestration: DCP Executor](#4-local-orchestration-dcp-executor)
-   - [What Is DCP?](#what-is-dcp)
-   - [What DcpExecutor Reads From the Resource Graph](#what-dcpexecutor-reads-from-the-resource-graph)
-   - [The AppResource Bridge Type](#the-appresource-bridge-type)
-   - [How KubernetesService Fits In](#how-kubernetesservice-fits-in)
-   - [State Change Propagation](#state-change-propagation)
+    - [What Is DCP?](#what-is-dcp)
+    - [What DcpExecutor Reads From the Resource Graph](#what-dcpexecutor-reads-from-the-resource-graph)
+    - [The AppResource Bridge Type](#the-appresource-bridge-type)
+    - [How KubernetesService Fits In](#how-kubernetesservice-fits-in)
+    - [State Change Propagation](#state-change-propagation)
 5. [Monitoring Dashboard](#5-monitoring-dashboard)
 6. [Publishing Pipeline](#6-publishing-pipeline)
 7. [Azure Integration & Bicep Generation](#7-azure-integration--bicep-generation)
-   - [The C# Integration API](#the-c-integration-api)
-   - [What Is the Azure.Provisioning SDK?](#what-is-the-azureprovisioning-sdk)
-   - [How the Provisioning CDK Connects to the AppHost API](#how-the-provisioning-cdk-connects-to-the-apphost-api)
-   - [How Bicep Is Generated: The Three-Layer Stack](#how-bicep-is-generated-the-three-layer-stack)
-   - [Post-CDK Modification: Extending Bicep Generation](#post-cdk-modification-extending-bicep-generation)
-   - [How the Provisioning Library Communicates (In-Process, Not RPC)](#how-the-provisioning-library-communicates-in-process-not-rpc)
-   - [Two Deployment Paths](#two-deployment-paths)
-   - [Full Azure Resource Lifecycle Mapping](#full-azure-resource-lifecycle-mapping)
-   - [Why the AppHost Must Run for Bicep Generation](#why-the-apphost-must-run-for-bicep-generation)
-   - [The Two-Description Problem: CDK vs. App Model](#the-two-description-problem-cdk-vs-app-model)
-   - [Why Not Unify Them as a Single Source of Truth?](#why-not-unify-them-as-a-single-source-of-truth)
-   - [What Can the Synthesis World Infer from the Orchestration World?](#what-can-the-synthesis-world-infer-from-the-orchestration-world)
-   - [Can the Orchestration World Be Inferred from the Synthesis World?](#can-the-orchestration-world-be-inferred-from-the-synthesis-world)
+    - [The C# Integration API](#the-c-integration-api)
+    - [What Is the Azure.Provisioning SDK?](#what-is-the-azureprovisioning-sdk)
+    - [How the Provisioning CDK Connects to the AppHost API](#how-the-provisioning-cdk-connects-to-the-apphost-api)
+    - [How Bicep Is Generated: The Three-Layer Stack](#how-bicep-is-generated-the-three-layer-stack)
+    - [Post-CDK Modification: Extending Bicep Generation](#post-cdk-modification-extending-bicep-generation)
+    - [How the Provisioning Library Communicates (In-Process, Not RPC)](#how-the-provisioning-library-communicates-in-process-not-rpc)
+    - [Two Deployment Paths](#two-deployment-paths)
+    - [Full Azure Resource Lifecycle Mapping](#full-azure-resource-lifecycle-mapping)
+    - [Why the AppHost Must Run for Bicep Generation](#why-the-apphost-must-run-for-bicep-generation)
+    - [The Two-Description Problem: CDK vs. App Model](#the-two-description-problem-cdk-vs-app-model)
+    - [Why Not Unify Them as a Single Source of Truth?](#why-not-unify-them-as-a-single-source-of-truth)
+    - [What Can the Synthesis World Infer from the Orchestration World?](#what-can-the-synthesis-world-infer-from-the-orchestration-world)
+    - [Can the Orchestration World Be Inferred from the Synthesis World?](#can-the-orchestration-world-be-inferred-from-the-synthesis-world)
 8. [Polyglot AppHost: Guest Runtime Interaction (ATS)](#8-polyglot-apphost-guest-runtime-interaction)
-   - [The Key Design Principle](#the-key-design-principle)
-   - [The 3-Process Architecture](#the-3-process-architecture)
-   - [Startup Sequence Step by Step](#startup-sequence-step-by-step)
-   - [JSON-RPC Protocol: Wire Format](#json-rpc-protocol-wire-format)
-   - [Handle System: How Objects Cross the Process Boundary](#handle-system-how-objects-cross-the-process-boundary)
-   - [Inside the AppHost Server: Capability Dispatch](#inside-the-apphost-server-capability-dispatch)
-   - [What the Generated TypeScript SDK Looks Like](#what-the-generated-typescript-sdk-looks-like)
-   - [Callbacks: Guest Code Invoked by .NET](#callbacks-guest-code-invoked-by-net)
-   - [Adding a New Guest Language (e.g., Python)](#adding-a-new-guest-language-eg-python)
-   - [Guest Runtime Interaction Summary Table](#guest-runtime-interaction-summary-table)
+    - [The Key Design Principle](#the-key-design-principle)
+    - [The 3-Process Architecture](#the-3-process-architecture)
+    - [Startup Sequence Step by Step](#startup-sequence-step-by-step)
+    - [JSON-RPC Protocol: Wire Format](#json-rpc-protocol-wire-format)
+    - [Handle System: How Objects Cross the Process Boundary](#handle-system-how-objects-cross-the-process-boundary)
+    - [Inside the AppHost Server: Capability Dispatch](#inside-the-apphost-server-capability-dispatch)
+    - [What the Generated TypeScript SDK Looks Like](#what-the-generated-typescript-sdk-looks-like)
+    - [Callbacks: Guest Code Invoked by .NET](#callbacks-guest-code-invoked-by-net)
+    - [Adding a New Guest Language (e.g., Python)](#adding-a-new-guest-language-eg-python)
+    - [Guest Runtime Interaction Summary Table](#guest-runtime-interaction-summary-table)
 9. [SDK Code Generator](#9-sdk-code-generator)
-   - [The Core Problem: No Runtime Discovery](#the-core-problem-no-runtime-discovery)
-   - [Why It Must Run on First Use](#why-it-must-run-on-first-use)
-   - [The Two-Phase Split: Where Code Lives](#the-two-phase-split-where-code-lives)
-   - [The `aspire sdk generate` Command](#the-aspire-sdk-generate-command)
-   - [Hash-Based Cache: When Regeneration Is Skipped](#hash-based-cache-when-regeneration-is-skipped)
-   - [The 5-Pass Scanner](#the-5-pass-scanner)
-   - [Assembly Loading in the AppHost Server](#assembly-loading-in-the-apphost-server)
+    - [The Core Problem: No Runtime Discovery](#the-core-problem-no-runtime-discovery)
+    - [Why It Must Run on First Use](#why-it-must-run-on-first-use)
+    - [The Two-Phase Split: Where Code Lives](#the-two-phase-split-where-code-lives)
+    - [The `aspire sdk generate` Command](#the-aspire-sdk-generate-command)
+    - [Hash-Based Cache: When Regeneration Is Skipped](#hash-based-cache-when-regeneration-is-skipped)
+    - [The 5-Pass Scanner](#the-5-pass-scanner)
+    - [Assembly Loading in the AppHost Server](#assembly-loading-in-the-apphost-server)
 10. [Aspire CLI Architecture](#10-aspire-cli-architecture)
     - [Why RPC Instead of In-Process](#why-rpc-instead-of-in-process)
     - [CLI Commands](#cli-commands)
@@ -136,13 +136,13 @@ aspire/
 
 ### Key Architectural Principles
 
-| Principle | Description |
-|-----------|-------------|
-| **Annotation-driven extensibility** | All resource metadata is injected as annotations. Third-party integrations extend the model without forking core types. |
-| **Context-aware behavior** | `DistributedApplicationExecutionContext` tells every resource whether it is in Run, Publish, or Test mode — the same app model behaves differently in each mode. |
-| **Lazy value resolution** | `IValueProvider`, `ReferenceExpression`, and `EndpointReference` are evaluated asynchronously at startup, allowing deferred config and circular-ish references. |
-| **Pipeline as first-class concept** | Provisioning, deployment, and publishing are steps in a dependency-ordered `DistributedApplicationPipeline`, not ad-hoc lifecycle hooks. |
-| **No IDL for polyglot** | ATS uses C# reflection as the schema source; `[AspireExport]` attributes are the contract, making polyglot SDKs a pure output of the existing C# type system. |
+| Principle                            | Description                                                                                                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Annotation-driven extensibility**  | All resource metadata is injected as annotations. Third-party integrations extend the model without forking core types.                                                              |
+| **Context-aware behavior**           | `DistributedApplicationExecutionContext` tells every resource whether it is in Run, Publish, or Test mode — the same app model behaves differently in each mode.                     |
+| **Lazy value resolution**            | `IValueProvider`, `ReferenceExpression`, and `EndpointReference` are evaluated asynchronously at startup, allowing deferred config and circular-ish references.                      |
+| **Pipeline as first-class concept**  | Provisioning, deployment, and publishing are steps in a dependency-ordered `DistributedApplicationPipeline`, not ad-hoc lifecycle hooks.                                             |
+| **No IDL for polyglot**              | ATS uses C# reflection as the schema source; `[AspireExport]` attributes are the contract, making polyglot SDKs a pure output of the existing C# type system.                        |
 | **Separation of hosting vs. client** | `src/Aspire.Hosting.*` is the app host (orchestration); `src/Components/Aspire.*` is the client library (consumed by individual microservices). They are independent NuGet packages. |
 
 ---
@@ -234,16 +234,16 @@ IDistributedApplicationBuilder     (top-level, owns model + DI)
 
 Resources opt into behaviors by implementing interfaces (polymorphism over type checks):
 
-| Interface | What it enables |
-|-----------|----------------|
-| `IResourceWithEnvironment` | `.WithEnvironment()`, env var injection |
-| `IResourceWithEndpoints` | `.WithEndpoint()`, `GetEndpoint()`, URL generation |
+| Interface                       | What it enables                                             |
+| ------------------------------- | ----------------------------------------------------------- |
+| `IResourceWithEnvironment`      | `.WithEnvironment()`, env var injection                     |
+| `IResourceWithEndpoints`        | `.WithEndpoint()`, `GetEndpoint()`, URL generation          |
 | `IResourceWithConnectionString` | `.WithReference(db)` wires connection string into consumers |
-| `IResourceWithServiceDiscovery` | Registers service in DNS-style discovery |
-| `IResourceWithArgs` | CLI argument injection |
-| `IResourceWithWaitSupport` | `WaitFor()` — blocks startup until dependency is ready |
-| `IResourceWithParent` | Lifecycle containment (child stops when parent stops) |
-| `IComputeResource` | Marks as a compute unit (project/container/exec) |
+| `IResourceWithServiceDiscovery` | Registers service in DNS-style discovery                    |
+| `IResourceWithArgs`             | CLI argument injection                                      |
+| `IResourceWithWaitSupport`      | `WaitFor()` — blocks startup until dependency is ready      |
+| `IResourceWithParent`           | Lifecycle containment (child stops when parent stops)       |
+| `IComputeResource`              | Marks as a compute unit (project/container/exec)            |
 
 ### The Value/Reference System — How the DAG Forms
 
@@ -255,12 +255,12 @@ web ──► EndpointReference ──► api
                                └──► ConnectionStringReference ──► postgres
 ```
 
-| Type | Run mode | Publish mode |
-|------|----------|--------------|
-| `EndpointReference` | `http://localhost:5000` | `{api.bindings.http.url}` |
-| `ConnectionStringReference` | `Host=localhost;Port=5432;...` | `{postgres.connectionString}` |
-| `ParameterResource` | value from user secrets / env | `${PARAM}` placeholder |
-| `ReferenceExpression` | interpolated concrete string | interpolated manifest expression |
+| Type                        | Run mode                       | Publish mode                     |
+| --------------------------- | ------------------------------ | -------------------------------- |
+| `EndpointReference`         | `http://localhost:5000`        | `{api.bindings.http.url}`        |
+| `ConnectionStringReference` | `Host=localhost;Port=5432;...` | `{postgres.connectionString}`    |
+| `ParameterResource`         | value from user secrets / env  | `${PARAM}` placeholder           |
+| `ReferenceExpression`       | interpolated concrete string   | interpolated manifest expression |
 
 `ReferenceExpression` is the key glue type — it wraps an interpolated string handler that captures structured value objects, not their resolved values. At run time, `IValueProvider.GetValueAsync()` resolves all references to concrete strings. At publish time, `IManifestExpressionProvider.ValueExpression` emits `{pg.bindings.tcp.host}` placeholders into the azd manifest.
 
@@ -268,7 +268,7 @@ web ──► EndpointReference ──► api
 
 > **Q: Is `DistributedApplicationModel` built before resource deployment happens? If so, how can it know resource identifiers and link resources without them being created yet?**
 
-**Yes — the model is fully built before any deployment occurs.** The key design that makes this work is *deferred evaluation*: the model is a graph of intentions, not resolved values.
+**Yes — the model is fully built before any deployment occurs.** The key design that makes this work is _deferred evaluation_: the model is a graph of intentions, not resolved values.
 
 **Build phase (`Program.cs` startup):**
 
@@ -278,10 +278,10 @@ Every call to `AddAzurePostgresFlexibleServer()`, `AddProject()`, `WithReference
 
 Every structured value in the DAG implements two interfaces:
 
-| Interface | Mode | Purpose |
-|-----------|------|---------|
+| Interface                     | Mode    | Purpose                                                                                                        |
+| ----------------------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
 | `IManifestExpressionProvider` | Publish | Emits a structured placeholder like `{pg.outputs.connectionString}` into Bicep/manifest — no real value needed |
-| `IValueProvider` | Run | Asynchronously resolves to a real value **after** the resource is provisioned |
+| `IValueProvider`              | Run     | Asynchronously resolves to a real value **after** the resource is provisioned                                  |
 
 `BicepOutputReference` is a concrete example — it wraps the name of an ARM deployment output:
 
@@ -360,17 +360,17 @@ App Host Process
 
 `DcpExecutor` walks `DistributedApplicationModel` and reads these annotations from each `IResource`:
 
-| Annotation / Resource Type | DCP CRD Produced | Key Fields Mapped |
-|---------------------------|------------------|-------------------|
-| `ContainerImageAnnotation` | `Container` (CRD) | image, ports, env, volumeMounts, command, args, restartPolicy, networks |
-| `DockerfileBuildAnnotation` | `Container.Spec.Build` | Dockerfile path, context, build args |
-| `EndpointAnnotation` | `Service` (CRD) | address, port, protocol, addressAllocationMode |
-| `ProjectResource` / `ExecutableResource` | `Executable` (CRD) | executablePath, workingDirectory, args, env, healthProbes |
-| `ContainerMountAnnotation` | `Container.Spec.VolumeMounts` | Source, target, type (bind/volume) |
-| `EnvironmentAnnotation` / `EnvironmentCallbackAnnotation` | `Container.Spec.Env` / `Executable.Spec.Env` | Resolved key/value EnvVar list |
-| `HealthCheckAnnotation` | `Executable.Spec.HealthProbes` | HTTP/TCP probe config |
-| `WaitAnnotation` | Ordering between Service objects | Which services must be ready before this resource starts |
-| `ProbeAnnotation` | `Container.Spec.HealthProbes` | Liveness/readiness probes |
+| Annotation / Resource Type                                | DCP CRD Produced                             | Key Fields Mapped                                                       |
+| --------------------------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------- |
+| `ContainerImageAnnotation`                                | `Container` (CRD)                            | image, ports, env, volumeMounts, command, args, restartPolicy, networks |
+| `DockerfileBuildAnnotation`                               | `Container.Spec.Build`                       | Dockerfile path, context, build args                                    |
+| `EndpointAnnotation`                                      | `Service` (CRD)                              | address, port, protocol, addressAllocationMode                          |
+| `ProjectResource` / `ExecutableResource`                  | `Executable` (CRD)                           | executablePath, workingDirectory, args, env, healthProbes               |
+| `ContainerMountAnnotation`                                | `Container.Spec.VolumeMounts`                | Source, target, type (bind/volume)                                      |
+| `EnvironmentAnnotation` / `EnvironmentCallbackAnnotation` | `Container.Spec.Env` / `Executable.Spec.Env` | Resolved key/value EnvVar list                                          |
+| `HealthCheckAnnotation`                                   | `Executable.Spec.HealthProbes`               | HTTP/TCP probe config                                                   |
+| `WaitAnnotation`                                          | Ordering between Service objects             | Which services must be ready before this resource starts                |
+| `ProbeAnnotation`                                         | `Container.Spec.HealthProbes`                | Liveness/readiness probes                                               |
 
 ### The AppResource Bridge Type
 
@@ -510,11 +510,11 @@ builder.AddProject<Projects.Api>()
 
 **Context-awareness pattern** — the same declaration behaves differently based on mode:
 
-| Context | Behavior |
-|---------|----------|
-| `aspire run` (local) | `RunAsContainer()` — removes Azure resource, adds local Docker container instead |
-| `aspire publish` | Emits Bicep + manifest, no containers started |
-| Azure provisioning (`aspire run` with Azure provisioner) | Actually deploys to Azure via ARM |
+| Context                                                  | Behavior                                                                         |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `aspire run` (local)                                     | `RunAsContainer()` — removes Azure resource, adds local Docker container instead |
+| `aspire publish`                                         | Emits Bicep + manifest, no containers started                                    |
+| Azure provisioning (`aspire run` with Azure provisioner) | Actually deploys to Azure via ARM                                                |
 
 ---
 
@@ -522,15 +522,15 @@ builder.AddProject<Projects.Api>()
 
 `Azure.Provisioning.*` NuGet packages (by the Azure SDK team — e.g., `Azure.Provisioning.Redis`, `Azure.Provisioning.KeyVault`) are a **C#-first infrastructure-as-code SDK**. They let you declare Azure infrastructure as typed C# objects that compile to Bicep text. Think of it as the Azure equivalent of CDK or Pulumi's native SDK.
 
-| SDK Type | Role |
-|----------|------|
-| `ProvisionableResource` | Base class for all Azure resources (e.g. `RedisResource`, `StorageAccount`) |
-| `ProvisioningParameter` | A Bicep `param` declaration |
-| `ProvisioningOutput` | A Bicep `output` declaration |
-| `BicepValue<T>` | A typed Bicep expression (literal, reference, or function call) |
-| `BicepFunction.Interpolate(...)` | Produces Bicep string interpolation (`'${...}'`) |
-| `Infrastructure.Build().Compile()` | Runs the entire graph and emits Bicep file content |
-| `ResourceX.FromExisting(...)` | References an already-deployed Azure resource by name |
+| SDK Type                           | Role                                                                        |
+| ---------------------------------- | --------------------------------------------------------------------------- |
+| `ProvisionableResource`            | Base class for all Azure resources (e.g. `RedisResource`, `StorageAccount`) |
+| `ProvisioningParameter`            | A Bicep `param` declaration                                                 |
+| `ProvisioningOutput`               | A Bicep `output` declaration                                                |
+| `BicepValue<T>`                    | A typed Bicep expression (literal, reference, or function call)             |
+| `BicepFunction.Interpolate(...)`   | Produces Bicep string interpolation (`'${...}'`)                            |
+| `Infrastructure.Build().Compile()` | Runs the entire graph and emits Bicep file content                          |
+| `ResourceX.FromExisting(...)`      | References an already-deployed Azure resource by name                       |
 
 Example — what `ConfigureRedisInfrastructure` does internally:
 
@@ -691,13 +691,13 @@ DistributedApplicationPipeline
   await bicepProvisioner.GetOrCreateResourceAsync(resource, provisioningContext, ...)
 ```
 
-| From → To | Mechanism |
-|-----------|-----------|
-| Pipeline executor → BicepProvisioner | `IServiceProvider.GetRequiredService<IBicepProvisioner>()` |
-| BicepProvisioner → Dashboard/UI | `ResourceNotificationService.PublishUpdateAsync()` (in-memory) |
-| BicepProvisioner → bicep CLI | `Process.Start("bicep build ...")` (subprocess) |
-| BicepProvisioner → Azure ARM API | `Azure.ResourceManager` SDK over HTTPS |
-| One Bicep resource waits on another | `TaskCompletionSource` on `AzureEnvironmentResource.ProvisioningContextTask` |
+| From → To                            | Mechanism                                                                    |
+| ------------------------------------ | ---------------------------------------------------------------------------- |
+| Pipeline executor → BicepProvisioner | `IServiceProvider.GetRequiredService<IBicepProvisioner>()`                   |
+| BicepProvisioner → Dashboard/UI      | `ResourceNotificationService.PublishUpdateAsync()` (in-memory)               |
+| BicepProvisioner → bicep CLI         | `Process.Start("bicep build ...")` (subprocess)                              |
+| BicepProvisioner → Azure ARM API     | `Azure.ResourceManager` SDK over HTTPS                                       |
+| One Bicep resource waits on another  | `TaskCompletionSource` on `AzureEnvironmentResource.ProvisioningContextTask` |
 
 ---
 
@@ -723,9 +723,9 @@ Deployment state is cached in `~/.aspire/deployments/<hash>.json` so re-runs ski
 
 ```json
 {
-  "type": "azure.bicep.v0",
-  "path": "redis.module.bicep",
-  "params": { "location": "{azure.location}" }
+    "type": "azure.bicep.v0",
+    "path": "redis.module.bicep",
+    "params": { "location": "{azure.location}" }
 }
 ```
 
@@ -865,13 +865,13 @@ After ARM deployment completes, the provisioner reads the output values by name 
 
 An Aspire integration author must maintain **two parallel descriptions** of the same Azure resource:
 
-| | CDK `ConfigureInfrastructure` callback | Aspire resource class |
-|---|---|---|
-| **Purpose** | Emit Bicep text (what Azure infrastructure exists) | App model node (DAG, references, DI wiring) |
-| **Executes when** | Publish/deploy time only | Registration time (always) |
-| **Types used** | `Azure.Provisioning.*` CDK types | `IResource`, `IResourceWithConnectionString`, etc. |
-| **What it produces** | `.bicep` file on disk | Entry in `DistributedApplicationModel.Resources` |
-| **Coupling point** | emits `ProvisioningOutput("blobEndpoint")` | reads `new BicepOutputReference("blobEndpoint", this)` |
+|                      | CDK `ConfigureInfrastructure` callback             | Aspire resource class                                  |
+| -------------------- | -------------------------------------------------- | ------------------------------------------------------ |
+| **Purpose**          | Emit Bicep text (what Azure infrastructure exists) | App model node (DAG, references, DI wiring)            |
+| **Executes when**    | Publish/deploy time only                           | Registration time (always)                             |
+| **Types used**       | `Azure.Provisioning.*` CDK types                   | `IResource`, `IResourceWithConnectionString`, etc.     |
+| **What it produces** | `.bicep` file on disk                              | Entry in `DistributedApplicationModel.Resources`       |
+| **Coupling point**   | emits `ProvisioningOutput("blobEndpoint")`         | reads `new BicepOutputReference("blobEndpoint", this)` |
 
 The coupling between the two is a **plain string** — the output name. There is no compiler enforcement. If an author adds `ProvisioningOutput("connectionString")` in the CDK callback but forgets the matching `BicepOutputReference("connectionString", this)` property on the resource class, it compiles fine and fails only at runtime.
 
@@ -992,11 +992,11 @@ storageAccount.PrimaryEndpoints.BlobUri.ToBicepExpression()
     // — requires reading ARM API documentation, not derivable from app model types
 ```
 
-The orchestration world says: *"there is an Azure Storage resource with 3 blob containers and HNS off."* It says nothing about ARM resource `kind`, SKU, TLS policy, the `BlobService` hierarchy node that ARM requires as a parent for containers, or which `PrimaryEndpoints.*` property path emits the blob URL.
+The orchestration world says: _"there is an Azure Storage resource with 3 blob containers and HNS off."_ It says nothing about ARM resource `kind`, SKU, TLS policy, the `BlobService` hierarchy node that ARM requires as a parent for containers, or which `PrimaryEndpoints.*` property path emits the blob URL.
 
 **The structural reason the gap is irreducible:**
 
-The Aspire app model intentionally stays abstract — it expresses developer intent (*"I want blob storage"*), not Azure ARM vocabulary. `StorageV2`, `StandardGrs`, `Tls1_2` are ARM taxonomy terms with no Aspire equivalents. The CDK lambda is precisely where that ARM vocabulary gets introduced. The work of encoding ARM schema knowledge doesn't disappear if you change the representation — it just moves somewhere else (a declarative config file, a code generator, a convention table). The C# lambda is the current encoding of that knowledge.
+The Aspire app model intentionally stays abstract — it expresses developer intent (_"I want blob storage"_), not Azure ARM vocabulary. `StorageV2`, `StandardGrs`, `Tls1_2` are ARM taxonomy terms with no Aspire equivalents. The CDK lambda is precisely where that ARM vocabulary gets introduced. The work of encoding ARM schema knowledge doesn't disappear if you change the representation — it just moves somewhere else (a declarative config file, a code generator, a convention table). The C# lambda is the current encoding of that knowledge.
 
 This is also why `ToProvisioningEntity()` only exists on simple leaf resources where the mapping is 1:1 and mechanical, while the top-level `AzureStorageResource` has no `ToProvisioningEntity()` — its CDK creation requires authorial judgment about ARM defaults that cannot be mechanically derived.
 
@@ -1048,6 +1048,7 @@ public ReferenceExpression BlobUriExpression => IsEmulator
 **Reason 5: Connection string format knowledge is orchestration-world-only**
 
 The `AzureBlobStorageResource` implements `IResourceWithConnectionString` with connection string formats that differ across three modes:
+
 - Emulator: full connection string with blob/queue/table ports
 - Azure standard client: `Endpoint={blobEndpoint}`
 - Azure Functions: separate `blobServiceUri` + `queueServiceUri` environment variable keys
@@ -1056,14 +1057,14 @@ None of this formatting logic appears in the CDK or the emitted Bicep. The synth
 
 **Summary: what the synthesis world permanently loses**
 
-| Orchestration-world concept | Synthesis-world equivalent |
-|---|---|
+| Orchestration-world concept                              | Synthesis-world equivalent                       |
+| -------------------------------------------------------- | ------------------------------------------------ |
 | `AzureBlobStorageResource` (consumer endpoint IResource) | Nothing — `BlobService` is an unrelated ARM node |
-| `EndpointReference` to Azurite port 10000 | Not representable in CDK/Bicep |
-| `PrivateEndpointTargetAnnotation` annotation | Consumed, not emitted |
-| Connection string format per SDK / per mode | Not representable in CDK/Bicep |
-| `WithReference()` injection wiring | Not representable in CDK/Bicep |
-| Azure Functions env var naming (`__blobServiceUri`) | Not representable in CDK/Bicep |
+| `EndpointReference` to Azurite port 10000                | Not representable in CDK/Bicep                   |
+| `PrivateEndpointTargetAnnotation` annotation             | Consumed, not emitted                            |
+| Connection string format per SDK / per mode              | Not representable in CDK/Bicep                   |
+| `WithReference()` injection wiring                       | Not representable in CDK/Bicep                   |
+| Azure Functions env var naming (`__blobServiceUri`)      | Not representable in CDK/Bicep                   |
 
 ---
 
@@ -1240,13 +1241,15 @@ The code generator produces typed TypeScript classes that call `invokeCapability
 export class DistributedApplicationBuilder {
     constructor(
         private readonly _handle: IDistributedApplicationBuilderHandle,
-        private readonly _client: AspireClient) {}
+        private readonly _client: AspireClient,
+    ) {}
 
     async addRedis(name: string, port?: number): Promise<RedisResourceBuilder> {
-        const result = await this._client.invokeCapability(
-            'Aspire.Hosting.Redis/addRedis',
-            { builder: this._handle, name, port }
-        );
+        const result = await this._client.invokeCapability('Aspire.Hosting.Redis/addRedis', {
+            builder: this._handle,
+            name,
+            port,
+        });
         return new RedisResourceBuilder(result as RedisResourceBuilderHandle, this._client);
     }
 }
@@ -1266,8 +1269,8 @@ The user's `apphost.ts`:
 import { createBuilder } from './.modules/aspire.js';
 
 const builder = await createBuilder();
-const cache = await builder.addRedis("cache");
-const api = await builder.addProject("api", "../Api/Api.csproj");
+const cache = await builder.addRedis('cache');
+const api = await builder.addProject('api', '../Api/Api.csproj');
 await api.withReference(cache);
 await builder.build().run();
 ```
@@ -1351,17 +1354,17 @@ No CLI changes needed — adding the NuGet package to `aspire.json` is the only 
 
 ### Guest Runtime Interaction Summary Table
 
-| Concern | Owned By | Mechanism |
-|---------|----------|-----------|
-| Socket path distribution | CLI | `REMOTE_APP_HOST_SOCKET_PATH` env var |
-| Language detection | `ILanguageSupport.Detect()` on server | CLI calls `detect` RPC |
-| Run command | `ILanguageSupport.GetRuntimeSpec()` on server | CLI calls `getRuntimeSpec` RPC |
-| Scaffolding new project | `ILanguageSupport.Scaffold()` on server | CLI calls `scaffoldAppHost` RPC |
-| SDK code generation | `ICodeGenerator` on server | CLI calls `generateCode` RPC |
-| Guest → Host calls | ATS JSON-RPC `invokeCapability` | Guest connects to Unix socket |
-| Host → Guest callbacks | ATS JSON-RPC `invokeCallback` | Reverse direction on same connection |
-| Handle lifecycle | AppHost server handle registry | Valid until server exits |
-| All Aspire integrations | .NET server process | Guest sees them as typed SDK methods |
+| Concern                  | Owned By                                      | Mechanism                             |
+| ------------------------ | --------------------------------------------- | ------------------------------------- |
+| Socket path distribution | CLI                                           | `REMOTE_APP_HOST_SOCKET_PATH` env var |
+| Language detection       | `ILanguageSupport.Detect()` on server         | CLI calls `detect` RPC                |
+| Run command              | `ILanguageSupport.GetRuntimeSpec()` on server | CLI calls `getRuntimeSpec` RPC        |
+| Scaffolding new project  | `ILanguageSupport.Scaffold()` on server       | CLI calls `scaffoldAppHost` RPC       |
+| SDK code generation      | `ICodeGenerator` on server                    | CLI calls `generateCode` RPC          |
+| Guest → Host calls       | ATS JSON-RPC `invokeCapability`               | Guest connects to Unix socket         |
+| Host → Guest callbacks   | ATS JSON-RPC `invokeCallback`                 | Reverse direction on same connection  |
+| Handle lifecycle         | AppHost server handle registry                | Valid until server exits              |
+| All Aspire integrations  | .NET server process                           | Guest sees them as typed SDK methods  |
 
 ---
 
@@ -1428,10 +1431,10 @@ const storage = await
 
 **To add a new Azure resource type accessible from TypeScript**, you must ship both sides:
 
-| Layer | What to write |
-|-------|--------------|
-| **C# (.NET)** | `MyResource : AzureProvisioningResource`, extension method with `[AspireExport("addMyResource")]`, `ConfigureInfrastructure` callback using `Azure.Provisioning.*` CDK types |
-| **TypeScript (generated)** | Run `aspire sdk generate` — reflects the C# assembly and generates the TypeScript wrapper that calls `invokeCapability("YourAssembly/addMyResource", ...)` |
+| Layer                      | What to write                                                                                                                                                                |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **C# (.NET)**              | `MyResource : AzureProvisioningResource`, extension method with `[AspireExport("addMyResource")]`, `ConfigureInfrastructure` callback using `Azure.Provisioning.*` CDK types |
+| **TypeScript (generated)** | Run `aspire sdk generate` — reflects the C# assembly and generates the TypeScript wrapper that calls `invokeCapability("YourAssembly/addMyResource", ...)`                   |
 
 The TypeScript library is then purely a proxy — it holds handles and routes calls. All provisioning logic stays in .NET.
 
@@ -1535,11 +1538,11 @@ The assembly list is driven by two things:
 
 ```json
 {
-  "AtsAssemblies": [
-    "Aspire.Hosting",
-    "Aspire.Hosting.Redis",
-    "Aspire.Hosting.CodeGeneration.TypeScript"
-  ]
+    "AtsAssemblies": [
+        "Aspire.Hosting",
+        "Aspire.Hosting.Redis",
+        "Aspire.Hosting.CodeGeneration.TypeScript"
+    ]
 }
 ```
 
@@ -1565,12 +1568,12 @@ For the prebuilt CLI bundle, `PrebuiltAppHostServer` restores NuGet packages to 
 
 The CLI is a **native AOT-compiled binary** that cannot dynamically load arbitrary .NET assemblies. ALL language-specific knowledge lives inside NuGet packages that are only present in the server process:
 
-| RPC Method | Why the CLI Can't Do It Locally |
-|------------|--------------------------------|
-| `getRuntimeSpec` | Returned by `ILanguageSupport` implementations from NuGet packages (`Aspire.Hosting.CodeGeneration.TypeScript`) — the CLI doesn't reference those packages |
-| `scaffoldAppHost` | Scaffold templates are embedded resources inside those same NuGet packages, accessed via `ILanguageSupport.Scaffold()` |
-| `generateCode` | Code generation requires `AtsCapabilityScanner` to reflect over loaded integration assemblies — only the server can do this |
-| `getCapabilities` | Same — needs reflection over NuGet package assemblies to enumerate `[AspireExport]` attributes |
+| RPC Method        | Why the CLI Can't Do It Locally                                                                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getRuntimeSpec`  | Returned by `ILanguageSupport` implementations from NuGet packages (`Aspire.Hosting.CodeGeneration.TypeScript`) — the CLI doesn't reference those packages |
+| `scaffoldAppHost` | Scaffold templates are embedded resources inside those same NuGet packages, accessed via `ILanguageSupport.Scaffold()`                                     |
+| `generateCode`    | Code generation requires `AtsCapabilityScanner` to reflect over loaded integration assemblies — only the server can do this                                |
+| `getCapabilities` | Same — needs reflection over NuGet package assemblies to enumerate `[AspireExport]` attributes                                                             |
 
 There is also a **process separation reason**: the AppHost Server manages DCP, containers, and the Dashboard. The CLI is the user-facing shell. Separate processes mean the CLI can monitor the server, restart it, and display its exit code independently.
 
@@ -1582,20 +1585,20 @@ CLI (native AOT, thin orchestrator)
 
 ### CLI Commands
 
-| Command | Purpose |
-|---------|---------|
-| `aspire run` | Launch App Host + DCP + Dashboard |
-| `aspire publish` | Generate deployment artifacts (Bicep, K8s YAML) |
-| `aspire add` | Add NuGet integration packages to a project |
-| `aspire new` | Scaffold from templates |
-| `aspire deploy` | Deploy to Azure (via `azd`) |
-| `aspire exec` | Run a command inside the Aspire environment |
-| `aspire ps / logs / restart` | Resource lifecycle management |
-| `aspire telemetry` | View OTLP traces/spans/logs from CLI |
-| `aspire mcp` | Start MCP server for AI tool integration |
-| `aspire sdk generate` | Generate guest-language SDK from an integration library |
-| `aspire sdk dump` | Dump all registered capabilities |
-| `aspire docs` | Search documentation |
+| Command                      | Purpose                                                 |
+| ---------------------------- | ------------------------------------------------------- |
+| `aspire run`                 | Launch App Host + DCP + Dashboard                       |
+| `aspire publish`             | Generate deployment artifacts (Bicep, K8s YAML)         |
+| `aspire add`                 | Add NuGet integration packages to a project             |
+| `aspire new`                 | Scaffold from templates                                 |
+| `aspire deploy`              | Deploy to Azure (via `azd`)                             |
+| `aspire exec`                | Run a command inside the Aspire environment             |
+| `aspire ps / logs / restart` | Resource lifecycle management                           |
+| `aspire telemetry`           | View OTLP traces/spans/logs from CLI                    |
+| `aspire mcp`                 | Start MCP server for AI tool integration                |
+| `aspire sdk generate`        | Generate guest-language SDK from an integration library |
+| `aspire sdk dump`            | Dump all registered capabilities                        |
+| `aspire docs`                | Search documentation                                    |
 
 ---
 
@@ -1807,12 +1810,12 @@ This is exactly what the test projects in `tests/Aspire.Hosting.Azure.*` do — 
 
 ### Summary: What to Debug Where
 
-| What You're Investigating | Which Process to Attach To |
-|---------------------------|---------------------------|
-| CLI logic (command parsing, orchestration) | CLI process |
-| Language detection, RuntimeSpec, scaffolding | AppHost Server (.NET) |
-| Capability dispatch, handle registry | AppHost Server (.NET) |
-| Provisioning SDK, Bicep text generation | AppHost Server (.NET) |
-| ARM deployment, Azure SDK calls | AppHost Server (.NET) |
-| User's TypeScript/Python config code | Guest process (node/python) |
-| Generated SDK behavior (.modules/) | Guest process, inspect source |
+| What You're Investigating                    | Which Process to Attach To    |
+| -------------------------------------------- | ----------------------------- |
+| CLI logic (command parsing, orchestration)   | CLI process                   |
+| Language detection, RuntimeSpec, scaffolding | AppHost Server (.NET)         |
+| Capability dispatch, handle registry         | AppHost Server (.NET)         |
+| Provisioning SDK, Bicep text generation      | AppHost Server (.NET)         |
+| ARM deployment, Azure SDK calls              | AppHost Server (.NET)         |
+| User's TypeScript/Python config code         | Guest process (node/python)   |
+| Generated SDK behavior (.modules/)           | Guest process, inspect source |
