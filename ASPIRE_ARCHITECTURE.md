@@ -17,6 +17,7 @@ Organized for progressive understanding: start with the big picture, then dive i
    - [Annotations — The Extensibility Mechanism](#annotations--the-extensibility-mechanism)
    - [Standard Capability Interfaces](#standard-capability-interfaces)
    - [The Value/Reference System — How the DAG Forms](#the-valuereference-system--how-the-dag-forms)
+   - [Build Phase vs. Deployment Phase: Deferred Evaluation](#build-phase-vs-deployment-phase-deferred-evaluation)
    - [Design Philosophy: Inert Data + External Orchestration](#design-philosophy-inert-data--external-orchestration)
 4. [Local Orchestration: DCP Executor](#4-local-orchestration-dcp-executor)
    - [What Is DCP?](#what-is-dcp)
@@ -31,6 +32,7 @@ Organized for progressive understanding: start with the big picture, then dive i
    - [What Is the Azure.Provisioning SDK?](#what-is-the-azureprovisioning-sdk)
    - [How the Provisioning CDK Connects to the AppHost API](#how-the-provisioning-cdk-connects-to-the-apphost-api)
    - [How Bicep Is Generated: The Three-Layer Stack](#how-bicep-is-generated-the-three-layer-stack)
+   - [Post-CDK Modification: Extending Bicep Generation](#post-cdk-modification-extending-bicep-generation)
    - [How the Provisioning Library Communicates (In-Process, Not RPC)](#how-the-provisioning-library-communicates-in-process-not-rpc)
    - [Two Deployment Paths](#two-deployment-paths)
    - [Full Azure Resource Lifecycle Mapping](#full-azure-resource-lifecycle-mapping)
@@ -261,6 +263,65 @@ web ──► EndpointReference ──► api
 | `ReferenceExpression` | interpolated concrete string | interpolated manifest expression |
 
 `ReferenceExpression` is the key glue type — it wraps an interpolated string handler that captures structured value objects, not their resolved values. At run time, `IValueProvider.GetValueAsync()` resolves all references to concrete strings. At publish time, `IManifestExpressionProvider.ValueExpression` emits `{pg.bindings.tcp.host}` placeholders into the azd manifest.
+
+### Build Phase vs. Deployment Phase: Deferred Evaluation
+
+> **Q: Is `DistributedApplicationModel` built before resource deployment happens? If so, how can it know resource identifiers and link resources without them being created yet?**
+
+**Yes — the model is fully built before any deployment occurs.** The key design that makes this work is *deferred evaluation*: the model is a graph of intentions, not resolved values.
+
+**Build phase (`Program.cs` startup):**
+
+Every call to `AddAzurePostgresFlexibleServer()`, `AddProject()`, `WithReference()` etc. constructs an in-memory DAG of `IResource` objects with annotations attached. No containers are started, no ARM deployments are triggered. `DistributedApplicationModel` is a snapshot of this graph — pure data, no side effects.
+
+**The two-interface pattern — how references cross the deployment boundary:**
+
+Every structured value in the DAG implements two interfaces:
+
+| Interface | Mode | Purpose |
+|-----------|------|---------|
+| `IManifestExpressionProvider` | Publish | Emits a structured placeholder like `{pg.outputs.connectionString}` into Bicep/manifest — no real value needed |
+| `IValueProvider` | Run | Asynchronously resolves to a real value **after** the resource is provisioned |
+
+`BicepOutputReference` is a concrete example — it wraps the name of an ARM deployment output:
+
+```csharp
+// In run mode: blocks until ARM deployment finishes, then returns the actual ARM output value
+public async ValueTask<string?> GetValueAsync(CancellationToken cancellationToken = default)
+{
+    var provisioning = Resource.ProvisioningTaskCompletionSource;
+    if (provisioning is not null)
+    {
+        await provisioning.Task.WaitAsync(cancellationToken);  // ← waits for ARM deployment
+    }
+    return Value;  // ← reads actual output after provisioning completes
+}
+```
+
+`ProvisioningTaskCompletionSource` is a `TaskCompletionSource` that `BicepProvisioner` completes once the ARM deployment finishes and outputs are read back. Any consumer process that has `WithReference(db)` blocks on this task before its environment variables are resolved and injected.
+
+**The full flow:**
+
+```
+Program.cs build phase
+  └── DAG constructed (IResource objects + annotations, BicepOutputReferences as placeholders)
+      └── DistributedApplicationModel frozen (no resources created yet)
+
+Run/Deploy phase (after build)
+  ├── Publish mode: IManifestExpressionProvider.ValueExpression
+  │     → emits "{pg.outputs.connectionString}" into Bicep params as a symbolic expression
+  │     (no actual values needed — module-to-module wiring is purely symbolic)
+  └── Run mode: IValueProvider.GetValueAsync()
+        → BicepProvisioner deploys the ARM template
+        → sets resource.Outputs["connectionString"] from ARM deployment outputs
+        → completes ProvisioningTaskCompletionSource
+        → unblocks all consumers waiting for that reference
+        → environment variables injected into child processes
+```
+
+**Why resource identifiers work without resources existing:**
+
+In publish mode, identifiers are never needed. A `BicepOutputReference` for `pg.outputs.connectionString` becomes the literal string `{pg.outputs.connectionString}` — a Bicep parameter that wires modules together symbolically. In run mode, resources are provisioned in dependency order derived from the DAG, and consumer processes never start until their dependencies' `TaskCompletionSource` fires. The model itself never holds actual IDs — it holds handles to future values that resolve at the right time.
 
 ### Design Philosophy: Inert Data + External Orchestration
 
@@ -547,6 +608,67 @@ var operation = await deployments.CreateOrUpdateAsync(
     }), cancellationToken);
 await operation.WaitForCompletionAsync(cancellationToken);
 ```
+
+---
+
+### Post-CDK Modification: Extending Bicep Generation
+
+> **Q: Can Aspire modify the Bicep content after the CDK libraries have defined it?**
+
+Yes — but not by text manipulation. Aspire modifies the **CDK object graph** before synthesis. The synthesis window is strictly between the CDK callbacks running and `Build()` being called. After `File.WriteAllText` the generated Bicep string is cached in `_generatedBicep` and never touched again.
+
+**The exact sequence inside `GetBicepTemplateFile()`** ([AzureProvisioningResource.cs](src/Aspire.Hosting.Azure/AzureProvisioningResource.cs)):
+
+```
+1. new AzureResourceInfrastructure(this, Name)   ← empty CDK graph, "location" param pre-added
+2. ConfigureInfrastructure(infrastructure)        ← all registered CDK callbacks run (multicast)
+3. EnsureParametersAlign(infrastructure)          ← Aspire post-processing (see below)
+4. infrastructure.Build(ProvisioningBuildOptions) ← CDK synthesizes to Bicep text
+5. File.WriteAllText(...)                         ← text written once, never modified again
+```
+
+**`ConfigureInfrastructure` is a composable multicast delegate:**
+
+`AzureProvisioningResource.ConfigureInfrastructure` is a plain `Action<AzureResourceInfrastructure>` property. The `ConfigureInfrastructure<T>()` extension method (in `AzureProvisioningResourceExtensions.cs`) appends additional callbacks using `+=`:
+
+```csharp
+// AzureProvisioningResourceExtensions.cs
+public static IResourceBuilder<T> ConfigureInfrastructure<T>(
+    this IResourceBuilder<T> builder,
+    Action<AzureResourceInfrastructure> configure)
+    where T : AzureProvisioningResource
+{
+    builder.Resource.ConfigureInfrastructure += configure;   // ← appended, not replaced
+    return builder;
+}
+```
+
+This means every `.ConfigureInfrastructure(infra => { ... })` call on a resource builder adds another pass over the CDK object graph that runs at synthesis time. The integration's own initial callback runs first; user-supplied customizations run after. Example:
+
+```csharp
+var redis = builder.AddAzureManagedRedis("cache")
+    .ConfigureInfrastructure(infra =>
+    {
+        // This runs after the integration's built-in ConfigureInfrastructure callback
+        var redisCache = infra.GetProvisionableResources()
+                              .OfType<RedisCache>()
+                              .Single();
+        redisCache.Sku = new RedisSkuInfo { Name = RedisSkuName.Premium, Capacity = 1 };
+    });
+```
+
+**`EnsureParametersAlign` — post-CDK parameter reconciliation (step 3):**
+
+After all CDK callbacks run, Aspire reconciles the CDK's synthesized `ProvisioningParameter` list with the Aspire-level `Parameters` dictionary:
+
+- CDK parameter exists but Aspire `Parameters` doesn't know about it → added to `Parameters` so it appears in the manifest
+- Aspire `Parameters` has an entry but the CDK is missing the corresponding parameter → a CDK `ProvisioningParameter` is injected (backwards compatibility for old-style `WithParameter` usage)
+
+**What does NOT happen:**
+
+- No regex or string rewriting of the `.bicep` text after synthesis
+- No post-`Build()` Bicep modification
+- The generated Bicep string is cached (`_generatedBicep`) after the first call to `GetBicepTemplateString()` — it is frozen from that point on
 
 ---
 
