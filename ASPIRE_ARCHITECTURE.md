@@ -27,6 +27,8 @@ Organized for progressive understanding: start with the big picture, then dive i
     - [State Change Propagation](#state-change-propagation)
 5. [Monitoring Dashboard](#5-monitoring-dashboard)
 6. [Publishing Pipeline](#6-publishing-pipeline)
+    - [How the Deployment Plan Is Built](#how-the-deployment-plan-is-built)
+    - [Worked Example: From AppHost to Execution Order](#worked-example-from-apphost-to-execution-order)
 7. [Azure Integration & Bicep Generation](#7-azure-integration--bicep-generation)
     - [The C# Integration API](#the-c-integration-api)
     - [What Is the Azure.Provisioning SDK?](#what-is-the-azureprovisioning-sdk)
@@ -472,6 +474,140 @@ ManifestPublisher
 ```
 
 The manifest (`aspire-manifest.json`) is the intermediate format consumed by `azd`, Kubernetes publishers, or custom tooling.
+
+### How the Deployment Plan Is Built
+
+> **Q: How does Aspire build its deployment plan?**
+
+The "deployment plan" is not a pre-authored document — it is a **dependency-ordered pipeline of steps** (`DistributedApplicationPipeline`) that Aspire re-derives from the resource graph on **every** run. There is no stored plan; it is discovered by scanning annotations and normalizing dependency edges into a single DAG that is then topologically executed.
+
+Everything lives in [DistributedApplicationPipeline.cs](src/Aspire.Hosting/Pipelines/DistributedApplicationPipeline.cs). The plan is assembled in four phases:
+
+| Phase | Method | What happens |
+| ----- | ------ | ------------ |
+| **1. Seed** | Pipeline constructor | Pre-populates built-in "meta" and prerequisite steps: `deploy`, `build`, `push`, `process-parameters`, `deploy-prereq`, `build-prereq`, `push-prereq`, `check-container-runtime`. The convention is `{verb} → {user/resource steps} → {verb}-prereq`. Names come from [WellKnownPipelineSteps.cs](src/Aspire.Hosting/Pipelines/WellKnownPipelineSteps.cs). |
+| **2. Collect** | `CollectStepsFromAnnotationsAsync` | Walks `DistributedApplicationModel.Resources`; every resource carrying a `PipelineStepAnnotation` runs its factory to produce steps. This is how compute environments (Azure/ACA, Kubernetes/Helm, Radius) and projects inject their real work. |
+| **3. Resolve** | `ResolveStepsAsync` | Merges built-in + annotation steps, runs `PipelineConfigurationAnnotation` callbacks (lets resources rewire edges), validates (no dup names / dangling deps), then `NormalizeRequiredByToDependsOn` flips every `RequiredBy` edge into a `DependsOn` edge. |
+| **4. Order + execute** | `FilterStepsForExecution` → `ExecuteStepsAsTaskDag` | Filters to the transitive dependencies of the target step (e.g. `deploy`), validates for cycles, then runs the steps as a **Task DAG** where each step awaits its dependencies. `GetTopologicalOrder` produces the deterministic linear ordering used for diagnostics and the sequential path. |
+
+The single insight worth remembering: **`RequiredBy` is just a `DependsOn` edge pointing the other way.** After normalization the whole plan is a one-direction dependency DAG. Resources never store the plan — they are inert "recipe cards" (`PipelineStepAnnotation`) that the pipeline collects and orders each run.
+
+The CLI `aspire deploy` maps to target step `"deploy"` via [DeployCommand.cs](src/Aspire.Cli/Commands/DeployCommand.cs); `aspire publish` targets `"publish"`.
+
+### Worked Example: From AppHost to Execution Order
+
+Consider a small app — a web frontend and an API (both .NET projects → container images), an Azure Postgres database, deployed to an Azure Container App environment:
+
+```csharp
+// AppHost.cs — what the developer writes
+var builder = DistributedApplication.CreateBuilder(args);
+
+var pg    = builder.AddAzurePostgresFlexibleServer("pg");   // Azure infra
+var db    = pg.AddDatabase("appdb");
+
+var api   = builder.AddProject<Projects.Api>("api")          // container image
+                   .WithReference(db);
+
+var web   = builder.AddProject<Projects.Web>("web")          // container image
+                   .WithReference(api);
+
+builder.AddAzureContainerAppEnvironment("env");              // compute target
+
+builder.Build().Run();   // ...or `aspire deploy` → target step = "deploy"
+```
+
+**Step 1 — Each resource contributes steps (as inert annotations).** Nothing runs yet; each `AddXxx` just attaches a `PipelineStepAnnotation` describing *what step to create later*:
+
+```text
+pg   (AzurePostgres)  → "provision-pg"    depends: [deploy-prereq]            requiredBy: [deploy]
+api  (Project)        → "build-api"       depends: [build-prereq]             requiredBy: [build]
+                      → "push-api"        depends: [push-prereq, build-api]   requiredBy: [push]
+                      → "deploy-api"      depends: [push-api, provision-pg]   requiredBy: [deploy]
+web  (Project)        → "build-web"       depends: [build-prereq]             requiredBy: [build]
+                      → "push-web"        depends: [push-prereq, build-web]   requiredBy: [push]
+                      → "deploy-web"      depends: [push-web, deploy-api]      requiredBy: [deploy]
+env  (ACA env)        → "provision-env"   depends: [deploy-prereq]            requiredBy: [deploy]
+```
+
+**Step 2 — Pseudo code of `ResolveStepsAsync`:**
+
+```text
+function ResolveStepsAsync(context):
+    allSteps = builtInSteps                       # deploy, build, push, *-prereq, ...
+    for resource in model.Resources:              # scan the flat resource list
+        for annotation in resource.PipelineStepAnnotations:
+            allSteps += annotation.CreateSteps()  # run each "recipe card"
+
+    runConfigurationCallbacks(allSteps)           # let resources rewire edges
+    validate(allSteps)                            # no dup names, no dangling deps
+
+    # KEY MOVE: collapse two edge types into ONE direction
+    for step in allSteps:
+        for target in step.RequiredBySteps:       # "A requiredBy B"
+            stepsByName[target].DependsOn.Add(step.Name)   # becomes "B dependsOn A"
+
+    return allSteps                               # now a pure DependsOn DAG
+```
+
+**Step 3 — The resolved DAG (for target `deploy`):**
+
+```mermaid
+graph TD
+    PP[process-parameters] --> DPQ[deploy-prereq]
+    PP --> BPQ[build-prereq]
+    PP --> PPQ[push-prereq]
+
+    DPQ --> PROVpg[provision-pg]
+    DPQ --> PROVenv[provision-env]
+
+    BPQ --> Ba[build-api]
+    BPQ --> Bw[build-web]
+    Ba --> Pa[push-api]
+    Bw --> Pw[push-web]
+    PPQ --> Pa
+    PPQ --> Pw
+
+    Pa --> Da[deploy-api]
+    PROVpg --> Da
+    Pw --> Dw[deploy-web]
+    Da --> Dw
+
+    PROVpg --> DEP[deploy]
+    PROVenv --> DEP
+    Da --> DEP
+    Dw --> DEP
+```
+
+**Step 4 — Filter to target + topological order.** `FilterStepsForExecution("deploy")` keeps only the steps reachable via `ComputeTransitiveDependencies`; `GetTopologicalOrder` yields a valid linear order where steps at the same level can run concurrently:
+
+```text
+  1. process-parameters
+  2. deploy-prereq, build-prereq, push-prereq       ← run concurrently
+  3. provision-pg, provision-env, build-api, build-web
+  4. push-api, push-web
+  5. deploy-api          (waits on push-api AND provision-pg)
+  6. deploy-web          (waits on push-web AND deploy-api)
+  7. deploy              (aggregation no-op)
+```
+
+**Step 5 — Execution is a Task DAG, not a sequential loop:**
+
+```text
+ExecuteStepsAsTaskDag(steps):
+    tcs = { step.Name: new TaskCompletionSource() for step in steps }
+
+    for step in steps:                    # start ALL steps at once
+        run async:
+            await Task.WhenAll(step.DependsOn.map(d => tcs[d].Task))  # gate on deps
+            try:    runStep(step); tcs[step].SetResult()
+            except: tcs[step].SetException()   # dependents auto-blocked, siblings continue
+```
+
+So `provision-pg` and `build-web` run in parallel; `deploy-api` starts only once *both* `push-api` and `provision-pg` finish; if `build-api` fails, `push-api`/`deploy-api`/`deploy` are blocked while `provision-env` still completes.
+
+**The mental model in one line:**
+
+> Resources are inert recipe cards → the pipeline collects the cards, flips every `RequiredBy` into a `DependsOn`, and runs the resulting DAG as gated tasks. There is no pre-authored plan; it is re-derived from annotations on every run.
 
 ---
 
