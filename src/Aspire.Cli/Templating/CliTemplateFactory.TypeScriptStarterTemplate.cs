@@ -1,7 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using Aspire.Cli.Configuration;
 using Aspire.Cli.Interaction;
+using Aspire.Cli.Projects;
 using Aspire.Cli.Resources;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
@@ -10,29 +12,27 @@ namespace Aspire.Cli.Templating;
 
 internal sealed partial class CliTemplateFactory
 {
-    private async Task<TemplateResult> ApplyTypeScriptStarterTemplateAsync(CallbackTemplate _, TemplateInputs inputs, System.CommandLine.ParseResult parseResult, CancellationToken cancellationToken)
+    private async Task<TemplateResult> ApplyTypeScriptStarterTemplateAsync(CallbackTemplate template, TemplateInputs inputs, System.CommandLine.ParseResult parseResult, CancellationToken cancellationToken)
     {
         var projectName = inputs.Name;
         if (string.IsNullOrWhiteSpace(projectName))
         {
-            var defaultName = _executionContext.WorkingDirectory.Name;
-            projectName = await _prompter.PromptForProjectNameAsync(defaultName, cancellationToken);
+            var defaultName = template.Name;
+            projectName = await _prompter.PromptForProjectNameAsync(defaultName, parseResult, cancellationToken);
         }
 
         if (string.IsNullOrWhiteSpace(inputs.Version))
         {
             _interactionService.DisplayError("Unable to determine Aspire version for the TypeScript starter template.");
-            return new TemplateResult(ExitCodeConstants.InvalidCommand);
+            return new TemplateResult(CliExitCodes.InvalidCommand);
         }
 
         var aspireVersion = inputs.Version;
-        var outputPath = inputs.Output;
-        if (string.IsNullOrWhiteSpace(outputPath))
+        var outputPath = await ResolveOutputPathAsync(inputs, template.PathDeriver, projectName, parseResult, cancellationToken);
+        if (outputPath is null)
         {
-            var defaultOutputPath = $"./{projectName}";
-            outputPath = await _prompter.PromptForOutputPath(defaultOutputPath, cancellationToken);
+            return new TemplateResult(CliExitCodes.FailedToCreateNewProject);
         }
-        outputPath = Path.GetFullPath(outputPath, _executionContext.WorkingDirectory.FullName);
 
         _logger.LogDebug("Applying TypeScript starter template. ProjectName: {ProjectName}, OutputPath: {OutputPath}, AspireVersion: {AspireVersion}.", projectName, outputPath, aspireVersion);
 
@@ -48,7 +48,7 @@ internal sealed partial class CliTemplateFactory
 
             templateResult = await _interactionService.ShowStatusAsync(
                 TemplatingStrings.CreatingNewProject,
-                async () =>
+                (Func<Task<TemplateResult>>)(async () =>
                 {
                     var projectNameLower = projectName.ToLowerInvariant();
 
@@ -59,26 +59,39 @@ internal sealed partial class CliTemplateFactory
                     _logger.LogDebug("Copying embedded TypeScript starter template files to '{OutputPath}'.", outputPath);
                     await CopyTemplateTreeToDiskAsync("ts-starter", outputPath, ApplyAllTokens, cancellationToken);
 
-                    var npmPath = PathLookupHelper.FindFullPathFromPath("npm") ?? PathLookupHelper.FindFullPathFromPath("npm.cmd");
-                    if (npmPath is null)
+                    // Persist the template SDK version before restore so integration and codegen package
+                    // resolution stays aligned with the project we just created. Only persist the
+                    // channel when NewCommand resolved an Explicit one (--channel, or a registered
+                    // channel matching CliExecutionContext.IdentityChannel). Implicit (nuget.org)
+                    // selections leave the channel unwritten so `aspire add`/`aspire restore` use
+                    // the user's ambient NuGet config without a per-project pin.
+                    var config = AspireConfigFile.LoadOrCreate(outputPath, aspireVersion);
+                    if (!string.IsNullOrEmpty(inputs.Channel))
                     {
-                        _interactionService.DisplayError("npm is not installed or not found in PATH. Please install Node.js and try again.");
-                        return new TemplateResult(ExitCodeConstants.InvalidCommand);
+                        config.Channel = inputs.Channel;
+                    }
+                    config.Save(outputPath);
+
+                    var appHostProject = _projectFactory.TryGetProject(new FileInfo(Path.Combine(outputPath, "apphost.mts")));
+                    if (appHostProject is not IGuestAppHostSdkGenerator guestProject)
+                    {
+                        _interactionService.DisplayError("Automatic 'aspire restore' is unavailable for the new TypeScript starter project because no TypeScript AppHost SDK generator was found.");
+                        return new TemplateResult((int)CliExitCodes.FailedToBuildArtifacts, outputPath);
                     }
 
-                    // Run npm install in the output directory (non-fatal — package may not be published yet)
-                    _logger.LogDebug("Running npm install for TypeScript starter in '{OutputPath}'.", outputPath);
-                    var npmInstallResult = await RunProcessAsync(npmPath, "install", outputPath, cancellationToken);
-                    if (npmInstallResult.ExitCode != 0)
+                    _logger.LogDebug("Generating SDK code for TypeScript starter in '{OutputPath}'.", outputPath);
+                    var restoreSucceeded = await guestProject.BuildAndGenerateSdkAsync(new DirectoryInfo(outputPath), packageSourceOverride: inputs.Source, cancellationToken: cancellationToken);
+                    if (!restoreSucceeded)
                     {
-                        _interactionService.DisplaySubtleMessage("npm install had warnings or errors. You may need to run 'npm install' manually after dependencies are available.");
-                        DisplayProcessOutput(npmInstallResult, treatStandardErrorAsError: false);
+                        _interactionService.DisplayError("Automatic 'aspire restore' failed for the new TypeScript starter project. Run 'aspire restore' in the project directory for more details.");
+                        return new TemplateResult((int)CliExitCodes.FailedToBuildArtifacts, outputPath);
                     }
+                    await _templateNuGetConfigService.CreateOrUpdateNuGetConfigForSourceOverrideAsync(inputs.Source, inputs.Channel, outputPath, cancellationToken);
 
-                    return new TemplateResult(ExitCodeConstants.Success, outputPath);
-                }, emoji: KnownEmojis.Rocket);
+                    return new TemplateResult((int)CliExitCodes.Success, outputPath);
+                }), emoji: KnownEmojis.Rocket);
 
-            if (templateResult.ExitCode != ExitCodeConstants.Success)
+            if (templateResult.ExitCode != CliExitCodes.Success)
             {
                 return templateResult;
             }
@@ -86,11 +99,11 @@ internal sealed partial class CliTemplateFactory
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             _interactionService.DisplayError($"Failed to create project files: {ex.Message}");
-            return new TemplateResult(ExitCodeConstants.FailedToCreateNewProject);
+            return new TemplateResult(CliExitCodes.FailedToCreateNewProject);
         }
 
         _interactionService.DisplaySuccess($"Created TypeScript starter project at {outputPath.EscapeMarkup()}");
-        _interactionService.DisplayMessage(KnownEmojis.Information, "Run 'aspire run' to start your AppHost.");
+        DisplayPostCreationInstructions(outputPath);
 
         return templateResult;
     }

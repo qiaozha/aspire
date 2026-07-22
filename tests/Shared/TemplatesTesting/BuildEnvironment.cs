@@ -90,7 +90,7 @@ public class BuildEnvironment
                         $"Could not find a SDK with the necessary components installed at {sdkFromArtifactsPath} computed from {nameof(RepoRoot)}={RepoRoot}." +
                         $" Build all the packages with '{buildCmd} -pack'." +
                         $" Then install the SDK with 'dotnet build {workloadsProjString}'." +
-                        " See https://github.com/dotnet/aspire/tree/main/tests/Aspire.Templates.Tests#readme for more details.");
+                        " See https://github.com/microsoft/aspire/tree/main/tests/Aspire.Templates.Tests#readme for more details.");
                 }
             }
             else
@@ -179,11 +179,16 @@ public class BuildEnvironment
         // in the tests
         EnvVars["_MSBUILDTLENABLED"] = "0";
         EnvVars["SkipAspireWorkloadManifest"] = "true";
+        // Template tests build generated apps from repo-built packages, not from an installed
+        // Aspire CLI bundle layout, so keep bundle resolution disabled for these test builds.
+        EnvVars["AspireUseCliBundle"] = "false";
+        EnvVars["NoWarn"] = "ASPIRE010";
 
         if (OperatingSystem.IsMacOS())
         {
-            // Disable default developer certificate server authentication in MacOS due to test performance issues
-            EnvVars["ASPIRE_DEVELOPER_CERTIFICATE_DEFAULT_SERVER_AUTHENTICATION"] = "false";
+            // Disable developer certificate trust and HTTPS termination in macOS template tests to avoid keychain prompts.
+            EnvVars["ASPIRE_DEVELOPER_CERTIFICATE_DEFAULT_TRUST"] = "false";
+            EnvVars["ASPIRE_DEVELOPER_CERTIFICATE_DEFAULT_HTTPS_TERMINATION"] = "false";
         }
 
         DotNet = Path.Combine(sdkForTemplatePath!, "dotnet");

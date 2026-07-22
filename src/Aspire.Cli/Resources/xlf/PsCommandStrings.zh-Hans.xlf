@@ -3,38 +3,48 @@
   <file datatype="xml" source-language="en" target-language="zh-Hans" original="../PsCommandStrings.resx">
     <body>
       <trans-unit id="Description">
-        <source>List running apphosts.</source>
-        <target state="new">List running apphosts.</target>
+        <source>List running AppHosts</source>
+        <target state="needs-review-translation">列出正在运行的 Aspire AppHost。</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="FollowOptionDescription">
+        <source>Keep running and emit updates as running AppHosts change. JSON output is emitted as newline-delimited full snapshots.</source>
+        <target state="new">Keep running and emit updates as running AppHosts change. JSON output is emitted as newline-delimited full snapshots.</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="FollowRequiresJson">
+        <source>The --follow option only supports JSON output. Use --format json.</source>
+        <target state="new">The --follow option only supports JSON output. Use --format json.</target>
         <note />
       </trans-unit>
       <trans-unit id="HeaderCliPid">
         <source>CLI PID</source>
-        <target state="needs-review-translation">CLI_PID</target>
+        <target state="translated">CLI PID</target>
         <note />
       </trans-unit>
       <trans-unit id="HeaderDashboard">
         <source>Dashboard</source>
-        <target state="needs-review-translation">仪表板</target>
+        <target state="translated">仪表板</target>
         <note />
       </trans-unit>
       <trans-unit id="HeaderPath">
         <source>Path</source>
-        <target state="needs-review-translation">PATH</target>
+        <target state="translated">路径</target>
         <note />
       </trans-unit>
       <trans-unit id="HeaderPid">
         <source>PID</source>
-        <target state="needs-review-translation">PID</target>
+        <target state="translated">PID</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="HeaderSdk">
+        <source>SDK</source>
+        <target state="new">SDK</target>
         <note />
       </trans-unit>
       <trans-unit id="JsonOptionDescription">
-        <source>Output format (Table or Json).</source>
-        <target state="translated">输出格式(表格或 Json)。</target>
-        <note />
-      </trans-unit>
-      <trans-unit id="ResourcesOptionDescription">
-        <source>Include resource details for each running app host. Only applies to JSON output.</source>
-        <target state="new">Include resource details for each running app host. Only applies to JSON output.</target>
+        <source>Output format (Table or Json)</source>
+        <target state="needs-review-translation">以 JSON 格式输出。</target>
         <note />
       </trans-unit>
       <trans-unit id="UnknownPath">

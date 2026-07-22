@@ -5,79 +5,119 @@ import AspireDcpServer from '../dcp/AspireDcpServer';
 import { removeTrailingNewline } from '../utils/strings';
 import { dcpServerNotInitialized } from '../loc/strings';
 
-export function createDebugAdapterTracker(dcpServer: AspireDcpServer, debugAdapter: string): vscode.Disposable {
+/**
+ * Callback invoked when a restart is requested on an app host debug session.
+ * Return `true` to suppress VS Code's automatic child session restart.
+ */
+export type AppHostRestartHandler = (debugSessionId: string) => boolean;
+
+/**
+ * DAP output event categories. Per the DAP spec the `category` field is optional;
+ * when missing, clients should treat it as `'console'`. This union keeps the known
+ * categories explicit while allowing adapter-specific values via the `(string & {})`
+ * trick, and includes `undefined` so callers can't accidentally rely on it being set.
+ */
+export type DapOutputCategory = 'console' | 'important' | 'stdout' | 'stderr' | 'debug' | 'telemetry' | (string & {}) | undefined;
+export type AppHostOutputHandler = (output: string, category: DapOutputCategory) => void;
+
+export function createDebugAdapterTracker(dcpServer: AspireDcpServer, debugAdapter: string, onAppHostRestartRequested?: AppHostRestartHandler, onAppHostOutput?: AppHostOutputHandler): vscode.Disposable {
     return vscode.debug.registerDebugAdapterTrackerFactory(debugAdapter, {
         createDebugAdapterTracker(session: vscode.DebugSession) {
-                return {
-                    onDidSendMessage: message => {
-                        if (message.type === 'event' && message.event === 'output') {
-                            if (!isDebugConfigurationWithId(session.configuration) || session.configuration.debugSessionId === null) {
-                                extensionLogOutputChannel.warn(`Debug session ${session.id} does not have an attached run id.`);
-                                return;
-                            }
+            const configuration = session.configuration;
+            if (!isDebugConfigurationWithId(configuration) || configuration.debugSessionId === null) {
+                return undefined;
+            }
+            const debugSessionId = configuration.debugSessionId;
 
-                            const { category, output } = message.body;
-                            if (category === 'stdout' || category === 'stderr') {
-                                const notification: ServiceLogsNotification = {
-                                    notification_type: 'serviceLogs',
-                                    session_id: session.configuration.runId,
-                                    dcp_id: session.configuration.debugSessionId,
-                                    is_std_err: category === 'stderr',
-                                    log_message: removeTrailingNewline(output)
-                                };
+            let debuggeeExitCode: number | undefined;
 
-                                dcpServer.sendNotification(notification);
-                            }
+            return {
+                onWillReceiveMessage: message => {
+                    // Detect restart requests on app host debug sessions.
+                    // When the user clicks "restart" on the app host child session,
+                    // suppress VS Code's automatic child restart so the Aspire debug
+                    // session can restart entirely instead.
+                    if (configuration.isApphost
+                        && (message.command === 'disconnect' || message.command === 'terminate')
+                        && message.arguments?.restart
+                        && onAppHostRestartRequested
+                        && debugSessionId) {
+                        const shouldSuppress = onAppHostRestartRequested(debugSessionId);
+                        if (shouldSuppress) {
+                            message.arguments.restart = false;
                         }
-
-                        // Listen for process event with isRestart (if supported by adapter)
-                        if (message.type === 'event' && message.event === 'process') {
-                            if (typeof message.body?.systemProcessId !== 'number') {
-                                extensionLogOutputChannel.warn(`Debug session ${session.id} does not have a valid system process ID.`);
+                    }
+                },
+                onDidSendMessage: message => {
+                    if (message.type === 'event' && message.event === 'output') {
+                        const { category, output } = message.body;
+                        if (typeof output === 'string' && category !== 'telemetry') {
+                            if (configuration.isApphost) {
+                                onAppHostOutput?.(output, category);
                                 return;
                             }
 
-                            if (!isDebugConfigurationWithId(session.configuration) || session.configuration.debugSessionId === null) {
-                                extensionLogOutputChannel.warn(`Debug session ${session.id} does not have an attached run id.`);
-                                return;
-                            }
-
-                            if (!dcpServer) {
-                                extensionLogOutputChannel.warn(dcpServerNotInitialized);
-                                return;
-                            }
-                            const processNotification: ProcessRestartedNotification = {
-                                notification_type: 'processRestarted',
-                                session_id: session.configuration.runId,
-                                dcp_id: session.configuration.debugSessionId,
-                                pid: message.body.systemProcessId
+                            const notification: ServiceLogsNotification = {
+                                notification_type: 'serviceLogs',
+                                session_id: configuration.runId,
+                                dcp_id: debugSessionId,
+                                is_std_err: category === 'stderr',
+                                log_message: removeTrailingNewline(output)
                             };
 
-                            dcpServer.sendNotification(processNotification);
+                            dcpServer.sendNotification(notification);
                         }
-                    },
-                    onExit(code: number | undefined) {
-                        if (!isDebugConfigurationWithId(session.configuration) || session.configuration.debugSessionId === null) {
-                            extensionLogOutputChannel.warn(`Debug session ${session.id} does not have an attached run id.`);
-                        return;
+                    }
+
+                    // Listen for process event with isRestart (if supported by adapter)
+                    if (message.type === 'event' && message.event === 'process') {
+                        // A new debuggee process invalidates any exit code captured from a prior run.
+                        // Reset before the PID guard: `systemProcessId` is optional in DAP, so a
+                        // restart reported without it must still clear the stale exit code.
+                        debuggeeExitCode = undefined;
+
+                        if (typeof message.body?.systemProcessId !== 'number') {
+                            extensionLogOutputChannel.warn(`Debug session ${session.id} does not have a valid system process ID.`);
+                            return;
                         }
 
-                        // Exit code 143 should be treated as normal exit (SIGTERM) on macOS and Linux
-                        if ((process.platform === 'darwin' || process.platform === 'linux') && code === 143) {
-                            code = 0;
+                        if (!dcpServer) {
+                            extensionLogOutputChannel.warn(dcpServerNotInitialized);
+                            return;
                         }
-
-                        const notification: SessionTerminatedNotification = {
-                            notification_type: 'sessionTerminated',
-                            session_id: session.configuration.runId,
-                            dcp_id: session.configuration.debugSessionId,
-                            exit_code: code ?? 0
+                        const processNotification: ProcessRestartedNotification = {
+                            notification_type: 'processRestarted',
+                            session_id: configuration.runId,
+                            dcp_id: debugSessionId,
+                            pid: message.body.systemProcessId
                         };
 
-                        dcpServer.sendNotification(notification);
+                        dcpServer.sendNotification(processNotification);
                     }
-                };
-            }
+
+                    if (message.type === 'event' && message.event === 'exited' && typeof message.body?.exitCode === 'number') {
+                        debuggeeExitCode = message.body.exitCode;
+                    }
+                },
+                onExit(code: number | undefined) {
+                    let exitCode = debuggeeExitCode ?? code;
+
+                    // Exit code 143 should be treated as normal exit (SIGTERM) on macOS and Linux
+                    if ((process.platform === 'darwin' || process.platform === 'linux') && exitCode === 143) {
+                        exitCode = 0;
+                    }
+
+                    const notification: SessionTerminatedNotification = {
+                        notification_type: 'sessionTerminated',
+                        session_id: configuration.runId,
+                        dcp_id: debugSessionId,
+                        exit_code: exitCode ?? 0
+                    };
+
+                    dcpServer.sendNotification(notification);
+                }
+            };
+        }
     });
 }
 

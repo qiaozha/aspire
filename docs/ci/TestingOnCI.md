@@ -12,6 +12,8 @@ The CI test infrastructure uses a unified matrix generation system that:
 4. Expands the matrix for specific CI platforms (GitHub Actions, Azure DevOps)
 5. Runs tests in parallel across multiple operating systems
 
+For how MTP diagnostic arguments (hang dump, crash dump, etc.) flow through this pipeline, see [MTP Args Pipeline](mtp-args-pipeline.md).
+
 ## Architecture
 
 ```text
@@ -56,11 +58,11 @@ This invokes `eng/TestEnumerationRunsheetBuilder/TestEnumerationRunsheetBuilder.
 - Writes a `.tests-metadata.json` file to `artifacts/helix/` containing:
   - `projectName`, `shortName`, `testProjectPath`
   - `supportedOSes` array (e.g., `["windows", "linux", "macos"]`)
-  - `requiresNugets`, `requiresTestSdk`, `requiresCliArchive` flags
-  - `enablePlaywrightInstall` flag
+  - `properties` object with boolean flags (defined in `eng/testing/CITestsProperties.props`): `requiresNugets`, `requiresTestSdk`, `requiresCliArchive`, `requiresGitHubToken`, `enablePlaywrightInstall`
   - `testSessionTimeout`, `testHangTimeout` values
   - `uncollectedTestsSessionTimeout`, `uncollectedTestsHangTimeout` values
   - `splitTests` flag
+  - `runners` object (optional, only present when custom runners are configured)
 
 ### Phase 2: Test Partition Discovery
 
@@ -84,7 +86,7 @@ After all projects build, `eng/AfterSolutionBuild.targets` runs `eng/scripts/bui
    - **Regular tests**: One entry per project
    - **Partition-based splits**: One entry per partition + one for `uncollected:*`
    - **Class-based splits**: One entry per test class
-6. Outputs `artifacts/canonical-test-matrix.json` in canonical format (flat array with `requiresNugets`, `requiresCliArchive` booleans per entry)
+6. Outputs `artifacts/canonical-test-matrix.json` in canonical format (entries with a `properties` sub-object containing boolean flags like `requiresNugets`, `requiresCliArchive`, `requiresGitHubToken`)
 
 **Canonical format:**
 ```json
@@ -95,8 +97,12 @@ After all projects build, `eng/AfterSolutionBuild.targets` runs `eng/scripts/bui
       "shortname": "Templates-StarterTests",
       "testProjectPath": "tests/Aspire.Templates.Tests/...",
       "supportedOSes": ["windows", "linux", "macos"],
-      "requiresNugets": true,
-      "requiresTestSdk": true,
+      "properties": {
+        "requiresNugets": true,
+        "requiresTestSdk": true,
+        "requiresCliArchive": false,
+        "enablePlaywrightInstall": false
+      },
       "testSessionTimeout": "20m",
       "testHangTimeout": "10m",
       "extraTestArgs": "--filter-class \"...\""
@@ -106,9 +112,15 @@ After all projects build, `eng/AfterSolutionBuild.targets` runs `eng/scripts/bui
       "shortname": "Hosting-Docker",
       "testProjectPath": "tests/Aspire.Hosting.Tests/...",
       "supportedOSes": ["linux"],
-      "requiresNugets": false,
+      "properties": {
+        "requiresNugets": false,
+        "requiresTestSdk": false,
+        "requiresCliArchive": false,
+        "enablePlaywrightInstall": false
+      },
       "testSessionTimeout": "30m",
-      "extraTestArgs": "--filter-trait \"Partition=Docker\""
+      "extraTestArgs": "--filter-trait \"Partition=Docker\"",
+      "runners": { "macos": "macos-latest-xlarge" }
     }
   ]
 }
@@ -121,12 +133,9 @@ Each CI platform has a thin script that transforms the canonical matrix:
 **GitHub Actions** (`eng/scripts/expand-test-matrix-github.ps1`):
 - Expands each entry for every OS in its `supportedOSes` array
 - Maps OS names to GitHub runners (`linux` → `ubuntu-latest`, etc.)
-- Splits entries into categories by dependency requirements:
-  - `no_nugets` — tests with no package dependencies
-  - `requires_nugets` — tests needing built NuGet packages
-  - `requires_cli_archive` — tests needing native CLI archives
+- Preserves dependency metadata within the `properties` sub-object (including `requiresNugets`, `requiresCliArchive`, `requiresGitHubToken`), and custom runner overrides on each expanded entry
 - Applies overflow splitting for the `no_nugets` category (threshold: 250 entries) to stay under the GitHub Actions 256-job-per-matrix limit
-- Outputs 4 GitHub Actions matrices: `no_nugets` (primary), `no_nugets_overflow`, `requires_nugets`, `requires_cli_archive`
+- Outputs a single `all_tests` matrix, which `.github/workflows/tests.yml` further splits by dependency type and OS using `eng/scripts/split-test-matrix-by-deps.ps1`
 
 **Azure DevOps** (future):
 - Would map OS names to vmImage or pool names
@@ -138,16 +147,36 @@ This separation keeps 90% of the logic platform-agnostic while allowing each CI 
 
 In `.github/workflows/tests.yml`, the workflow:
 
-1. Receives 4 pre-split matrices from the `enumerate-tests` action (split by `expand-test-matrix-github.ps1`)
-2. Runs 4 job groups using the split matrices:
-   - `tests_no_nugets`: Runs immediately after enumeration
-   - `tests_no_nugets_overflow`: Runs immediately (handles entries beyond the 250-entry threshold)
-   - `tests_requires_nugets`: Waits for `build_packages` job
-   - `tests_requires_cli_archive`: Waits for both `build_packages` and `build_cli_archives` jobs
+1. Receives the OS-expanded `all_tests` matrix from the `enumerate-tests` action
+2. Splits that matrix with `eng/scripts/split-test-matrix-by-deps.ps1` into 6 buckets:
+   - `tests_matrix_no_nugets`
+   - `tests_matrix_no_nugets_overflow`
+   - `tests_matrix_requires_nugets_linux`
+   - `tests_matrix_requires_nugets_windows`
+   - `tests_matrix_requires_nugets_macos`
+   - `tests_matrix_requires_cli_archive`
+3. Runs the CI jobs so the critical path stays as short as possible:
+    - `tests_no_nugets`: Runs immediately after enumeration
+    - `tests_no_nugets_overflow`: Runs immediately (handles entries beyond the 250-entry threshold)
+    - `build_packages`: Produces the shared package feed used by all package-dependent jobs
+    - `build_cli_archive_linux`, `build_cli_archive_windows`, `build_cli_archive_macos`: Build native CLI archives and the matching RID-specific DCP/Dashboard packages in parallel with `build_packages`
+    - `tests_requires_nugets_linux`, `tests_requires_nugets_windows`, `tests_requires_nugets_macos`: Wait for `build_packages` plus only the CLI archive job for their OS
+    - `tests_requires_cli_archive`: Waits for `build_packages` and `build_cli_archive_linux`
+    - `polyglot_validation`: Waits for `build_packages` and `build_cli_archive_linux`
 
 Each job invokes `.github/workflows/run-tests.yml` with matrix parameters including `extraTestArgs` for filtering (e.g., `--filter-trait "Partition=X"`).
 
 > **Note:** The workflow automatically prepends `--filter-not-trait "quarantined=true" --filter-not-trait "outerloop=true"` before any `extraTestArgs`, ensuring quarantined and outerloop tests are always excluded from the main test run.
+
+### Why the jobs are structured this way
+
+The workflow intentionally favors shorter dependency chains over a smaller number of larger jobs:
+
+1. **`no_nugets` jobs start first** so pure managed/unit test coverage begins as soon as enumeration finishes.
+2. **`build_packages` and the CLI archive jobs run in parallel** because the CLI archive workflow builds its own RID-specific DCP and Dashboard packages locally. That removes a serial dependency where archive creation would otherwise wait for the shared package build.
+3. **`requires_nugets` is split by OS** because each OS-specific test group needs the RID-specific DCP/Dashboard packages produced by that platform's CLI archive job. Splitting the jobs prevents Linux tests from waiting on the slower Windows or macOS archive builds.
+4. **`tests_requires_cli_archive` and `polyglot_validation` only depend on the Linux archive** because the current consumers in those buckets use the Linux CLI archive path. That keeps linux-only validation on the fastest available path instead of blocking on unrelated Windows or macOS work.
+5. **The `results` job depends on every relevant lane** so the workflow still reports a single final status after the parallelized work completes.
 
 #### GitHub Actions 256-Job Limit
 
@@ -197,7 +226,7 @@ If no `Partition` traits are found, the infrastructure automatically falls back 
 
 ## Controlling OS Compatibility
 
-By default, tests run on all three platforms. To restrict a project to specific OSes:
+By default, tests run on Linux and Windows. macOS is **disabled by default** — only tests that explicitly opt in will run on macOS. To configure which OSes a project runs on:
 
 ```xml
 <PropertyGroup>
@@ -205,6 +234,15 @@ By default, tests run on all three platforms. To restrict a project to specific 
   <RunOnGithubActionsWindows>false</RunOnGithubActionsWindows>
   <RunOnGithubActionsLinux>true</RunOnGithubActionsLinux>
   <RunOnGithubActionsMacOS>false</RunOnGithubActionsMacOS>
+</PropertyGroup>
+```
+
+To opt a project into macOS runs (e.g., only on push/merge, not on pull requests):
+
+```xml
+<PropertyGroup>
+  <!-- Run on macOS in GitHub Actions, but only outside of pull requests -->
+  <RunOnGithubActionsMacOS Condition=" '$(IsGitHubActionsRunner)' == 'true' and '$(IsGithubPullRequest)' != 'true' ">true</RunOnGithubActionsMacOS>
 </PropertyGroup>
 ```
 
@@ -220,7 +258,7 @@ For tests that need the built Aspire packages (e.g., template tests, end-to-end 
 </PropertyGroup>
 ```
 
-These tests wait for the `build_packages` job before running.
+These tests wait for the `build_packages` job before running. In the main `tests.yml` workflow they are then split by OS so each lane can also wait for the matching RID-specific packages produced by that platform's CLI archive job.
 
 ## Requiring CLI Native Archives
 
@@ -233,7 +271,19 @@ For tests that need native CLI archives (e.g., CLI end-to-end tests):
 </PropertyGroup>
 ```
 
-These tests wait for both the `build_packages` and `build_cli_archives` jobs before running. The workflow also sets `GH_TOKEN`, `GITHUB_PR_NUMBER`, and `GITHUB_PR_HEAD_SHA` environment variables for CLI E2E test scenarios.
+These tests wait for both the `build_packages` job and the Linux CLI archive job before running. Today that lane is Linux-only, so it depends on `build_cli_archive_linux` instead of every CLI archive build. The workflow also sets `GH_TOKEN`, `GITHUB_PR_NUMBER`, and `GITHUB_PR_HEAD_SHA` environment variables for CLI E2E test scenarios.
+
+## Requiring GitHub Token
+
+For tests that need access to the GitHub API (e.g., downloading PR artifacts, querying PR metadata):
+
+```xml
+<PropertyGroup>
+  <RequiresGitHubToken>true</RequiresGitHubToken>
+</PropertyGroup>
+```
+
+This makes the `GH_TOKEN` environment variable available to the test runner. The token is the automatic `github.token` provided by GitHub Actions. Note that `RequiresCliArchive` also implies `GH_TOKEN` availability for backward compatibility.
 
 ## Enabling Playwright
 
@@ -246,6 +296,68 @@ For tests that require Playwright browser automation:
 ```
 
 This flag is tracked in the test metadata and controls whether Playwright browsers are installed during the test build step.
+
+## CI Test Property Registry
+
+All boolean test properties (such as `RequiresNugets`, `RequiresTestSdk`, `RequiresCliArchive`, `EnablePlaywrightInstall`) are defined in a single source of truth:
+
+**`eng/testing/CITestsProperties.props`**
+
+```xml
+<ItemGroup>
+  <CITestsProperty Include="requiresNugets" MSBuildProp="RequiresNugets" Default="false" />
+  <CITestsProperty Include="requiresTestSdk" MSBuildProp="RequiresTestSdk" Default="false" />
+  <CITestsProperty Include="requiresCliArchive" MSBuildProp="RequiresCliArchive" Default="false" />
+  <CITestsProperty Include="enablePlaywrightInstall" MSBuildProp="EnablePlaywrightInstall" Default="false" />
+</ItemGroup>
+```
+
+Each `CITestsProperty` item has three attributes:
+
+| Attribute | Description |
+|-----------|-------------|
+| `Include` | The JSON key name used in metadata files and workflow properties (camelCase) |
+| `MSBuildProp` | The MSBuild property name read from test project `.csproj` files (PascalCase) |
+| `Default` | The default value when the property is not set in a test project |
+
+### How it flows through the system
+
+1. **MSBuild targets** (`TestEnumerationRunsheetBuilder.targets`, `SpecializedTestRunsheetBuilderBase.targets`) import this file and iterate `@(CITestsProperty)` to dynamically resolve property values and emit the `"properties"` JSON object — no hardcoded property names in the targets.
+2. **PowerShell scripts** (`build-test-matrix.ps1`) parse the `.props` XML at startup to build the defaults dictionary and copy properties generically — no per-property code blocks.
+3. **GitHub Actions workflows** (`run-tests.yml`) read properties from the opaque `properties` JSON string with bespoke `if:` conditions for each property that controls unique workflow behavior.
+
+### Adding a new boolean test property
+
+1. Add one line to `eng/testing/CITestsProperties.props`:
+   ```xml
+   <CITestsProperty Include="myNewFlag" MSBuildProp="MyNewFlag" Default="false" />
+   ```
+2. Set the MSBuild property in the test project's `.csproj`:
+   ```xml
+   <PropertyGroup>
+     <MyNewFlag>true</MyNewFlag>
+   </PropertyGroup>
+   ```
+3. Add behavioral logic in the GitHub Actions workflow YAML (e.g., `if:` conditions in `run-tests.yml`) to act on the new property.
+
+## Custom GitHub Actions Runners
+
+By default, tests run on `ubuntu-latest`, `windows-latest`, and `macos-latest`. To override the runner for a specific OS (e.g., to use larger runners or specific OS versions), set the corresponding property in the test project's `.csproj`:
+
+```xml
+<PropertyGroup>
+  <!-- Use a larger macOS runner for this test project -->
+  <GithubActionsRunnerMacOS>macos-latest-xlarge</GithubActionsRunnerMacOS>
+
+  <!-- Use a specific Ubuntu version -->
+  <GithubActionsRunnerLinux>ubuntu-24.04</GithubActionsRunnerLinux>
+
+  <!-- Use a specific Windows version -->
+  <GithubActionsRunnerWindows>windows-2022</GithubActionsRunnerWindows>
+</PropertyGroup>
+```
+
+Only set the properties you need to override — unset properties use the default runners. The overrides are emitted as a `runners` object in the test metadata JSON and flow through the canonical matrix to the GitHub Actions expansion, where they replace the default `runs-on` value for the corresponding OS.
 
 ## Deployment Tests
 
@@ -266,10 +378,11 @@ During enumeration, these files are generated in `artifacts/`:
 | `helix/<ProjectName>.tests-partitions.json` | Partition/class list for split projects |
 | `canonical-test-matrix.json` | Canonical matrix (platform-agnostic) |
 
-## Scripts Reference
+## Scripts and Configuration Reference
 
-| Script | Purpose |
-|--------|---------|
+| File | Purpose |
+|------|---------|
+| `eng/testing/CITestsProperties.props` | Single source of truth for CI test property names, defaults, and MSBuild mappings |
 | `eng/scripts/build-test-matrix.ps1` | Generates canonical matrix from metadata files |
 | `eng/scripts/expand-test-matrix-github.ps1` | Expands canonical matrix for GitHub Actions |
 | `eng/scripts/split-test-projects-for-ci.ps1` | Discovers test partitions/classes for splitting |

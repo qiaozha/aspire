@@ -25,13 +25,14 @@ public static class TestDataBuilder
         string projectName,
         string testProjectPath,
         string? shortName = null,
-        string? testSessionTimeout = null,
-        string? testHangTimeout = null,
+        string? mtpBaseArgs = null,
         bool requiresNugets = false,
         bool requiresTestSdk = false,
         bool requiresCliArchive = false,
+        bool enablePlaywrightInstall = false,
         string? extraTestArgs = null,
-        string[]? supportedOSes = null)
+        string[]? supportedOSes = null,
+        Dictionary<string, string>? runners = null)
     {
         var metadata = new TestMetadata
         {
@@ -39,13 +40,17 @@ public static class TestDataBuilder
             TestProjectPath = testProjectPath,
             ShortName = shortName ?? projectName,
             SplitTests = "false",
-            TestSessionTimeout = testSessionTimeout,
-            TestHangTimeout = testHangTimeout,
-            RequiresNugets = requiresNugets ? "true" : null,
-            RequiresTestSdk = requiresTestSdk ? "true" : null,
-            RequiresCliArchive = requiresCliArchive ? "true" : null,
+            MtpBaseArgs = mtpBaseArgs,
+            Properties = new Dictionary<string, bool>
+            {
+                ["requiresNugets"] = requiresNugets,
+                ["requiresTestSdk"] = requiresTestSdk,
+                ["requiresCliArchive"] = requiresCliArchive,
+                ["enablePlaywrightInstall"] = enablePlaywrightInstall
+            },
             ExtraTestArgs = extraTestArgs,
-            SupportedOSes = supportedOSes ?? ["windows", "linux", "macos"]
+            SupportedOSes = supportedOSes ?? ["windows", "linux", "macos"],
+            Runners = runners
         };
 
         var json = JsonSerializer.Serialize(metadata, s_jsonOptions);
@@ -66,13 +71,14 @@ public static class TestDataBuilder
         string projectName,
         string testProjectPath,
         string? shortName = null,
-        string? testSessionTimeout = null,
-        string? testHangTimeout = null,
-        string? uncollectedTestsSessionTimeout = null,
-        string? uncollectedTestsHangTimeout = null,
+        string? mtpBaseArgs = null,
+        string? uncollectedMtpBaseArgs = null,
         bool requiresNugets = false,
         bool requiresTestSdk = false,
-        string[]? supportedOSes = null)
+        bool requiresCliArchive = false,
+        bool enablePlaywrightInstall = false,
+        string[]? supportedOSes = null,
+        Dictionary<string, string>? runners = null)
     {
         var metadata = new TestMetadata
         {
@@ -80,13 +86,17 @@ public static class TestDataBuilder
             TestProjectPath = testProjectPath,
             ShortName = shortName ?? projectName,
             SplitTests = "true",
-            TestSessionTimeout = testSessionTimeout,
-            TestHangTimeout = testHangTimeout,
-            UncollectedTestsSessionTimeout = uncollectedTestsSessionTimeout,
-            UncollectedTestsHangTimeout = uncollectedTestsHangTimeout,
-            RequiresNugets = requiresNugets ? "true" : null,
-            RequiresTestSdk = requiresTestSdk ? "true" : null,
-            SupportedOSes = supportedOSes ?? ["windows", "linux", "macos"]
+            MtpBaseArgs = mtpBaseArgs,
+            UncollectedMtpBaseArgs = uncollectedMtpBaseArgs,
+            Properties = new Dictionary<string, bool>
+            {
+                ["requiresNugets"] = requiresNugets,
+                ["requiresTestSdk"] = requiresTestSdk,
+                ["requiresCliArchive"] = requiresCliArchive,
+                ["enablePlaywrightInstall"] = enablePlaywrightInstall
+            },
+            SupportedOSes = supportedOSes ?? ["windows", "linux", "macos"],
+            Runners = runners
         };
 
         var json = JsonSerializer.Serialize(metadata, s_jsonOptions);
@@ -178,12 +188,13 @@ public static class TestDataBuilder
         string? collection = null,
         string? classname = null,
         string? extraTestArgs = null,
-        string testSessionTimeout = "20m",
-        string testHangTimeout = "10m",
+        string mtpBaseArgs = "",
         bool requiresNugets = false,
         bool requiresTestSdk = false,
         bool requiresCliArchive = false,
-        string[]? supportedOSes = null)
+        bool enablePlaywrightInstall = false,
+        string[]? supportedOSes = null,
+        Dictionary<string, string>? runners = null)
     {
         return new CanonicalMatrixEntry
         {
@@ -196,12 +207,16 @@ public static class TestDataBuilder
             Collection = collection,
             Classname = classname,
             ExtraTestArgs = extraTestArgs ?? "",
-            TestSessionTimeout = testSessionTimeout,
-            TestHangTimeout = testHangTimeout,
-            RequiresNugets = requiresNugets,
-            RequiresTestSdk = requiresTestSdk,
-            RequiresCliArchive = requiresCliArchive,
-            SupportedOSes = supportedOSes ?? ["windows", "linux", "macos"]
+            MtpBaseArgs = mtpBaseArgs,
+            Properties = new Dictionary<string, bool>
+            {
+                ["requiresNugets"] = requiresNugets,
+                ["requiresTestSdk"] = requiresTestSdk,
+                ["requiresCliArchive"] = requiresCliArchive,
+                ["enablePlaywrightInstall"] = enablePlaywrightInstall
+            },
+            SupportedOSes = supportedOSes ?? ["windows", "linux", "macos"],
+            Runners = runners
         };
     }
 
@@ -219,32 +234,23 @@ public static class TestDataBuilder
         [JsonPropertyName("splitTests")]
         public string SplitTests { get; set; } = "false";
 
-        [JsonPropertyName("testSessionTimeout")]
-        public string? TestSessionTimeout { get; set; }
+        [JsonPropertyName("mtpBaseArgs")]
+        public string? MtpBaseArgs { get; set; }
 
-        [JsonPropertyName("testHangTimeout")]
-        public string? TestHangTimeout { get; set; }
+        [JsonPropertyName("uncollectedMtpBaseArgs")]
+        public string? UncollectedMtpBaseArgs { get; set; }
 
-        [JsonPropertyName("uncollectedTestsSessionTimeout")]
-        public string? UncollectedTestsSessionTimeout { get; set; }
-
-        [JsonPropertyName("uncollectedTestsHangTimeout")]
-        public string? UncollectedTestsHangTimeout { get; set; }
-
-        [JsonPropertyName("requiresNugets")]
-        public string? RequiresNugets { get; set; }
-
-        [JsonPropertyName("requiresTestSdk")]
-        public string? RequiresTestSdk { get; set; }
-
-        [JsonPropertyName("requiresCliArchive")]
-        public string? RequiresCliArchive { get; set; }
+        [JsonPropertyName("properties")]
+        public Dictionary<string, bool> Properties { get; set; } = new();
 
         [JsonPropertyName("extraTestArgs")]
         public string? ExtraTestArgs { get; set; }
 
         [JsonPropertyName("supportedOSes")]
         public string[] SupportedOSes { get; set; } = ["windows", "linux", "macos"];
+
+        [JsonPropertyName("runners")]
+        public Dictionary<string, string>? Runners { get; set; }
     }
 
     private sealed class TestPartitionsJson
@@ -295,26 +301,20 @@ public class CanonicalMatrixEntry
     [JsonPropertyName("extraTestArgs")]
     public string ExtraTestArgs { get; set; } = "";
 
-    [JsonPropertyName("testSessionTimeout")]
-    public string TestSessionTimeout { get; set; } = "20m";
+    [JsonPropertyName("mtpBaseArgs")]
+    public string MtpBaseArgs { get; set; } = "";
 
-    [JsonPropertyName("testHangTimeout")]
-    public string TestHangTimeout { get; set; } = "10m";
-
-    [JsonPropertyName("requiresNugets")]
-    public bool RequiresNugets { get; set; }
-
-    [JsonPropertyName("requiresTestSdk")]
-    public bool RequiresTestSdk { get; set; }
-
-    [JsonPropertyName("requiresCliArchive")]
-    public bool RequiresCliArchive { get; set; }
+    [JsonPropertyName("properties")]
+    public Dictionary<string, bool> Properties { get; set; } = new();
 
     [JsonPropertyName("splitTests")]
     public bool SplitTests { get; set; }
 
     [JsonPropertyName("supportedOSes")]
     public string[] SupportedOSes { get; set; } = ["windows", "linux", "macos"];
+
+    [JsonPropertyName("runners")]
+    public Dictionary<string, string>? Runners { get; set; }
 }
 
 /// <summary>

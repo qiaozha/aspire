@@ -12,7 +12,9 @@ namespace Aspire.Cli.Projects;
 internal record AppHostValidationResult(
     bool IsValid,
     bool IsPossiblyUnbuildable = false,
-    string? Message = null);
+    bool IsUnsupported = false,
+    string? Message = null,
+    string? AspireHostingVersion = null);
 
 /// <summary>
 /// Context for updating packages in an AppHost project.
@@ -28,6 +30,18 @@ internal sealed class UpdatePackagesContext
     /// Gets or sets the package channel to update to.
     /// </summary>
     public required Packaging.PackageChannel Channel { get; init; }
+
+    /// <summary>
+    /// Gets the prompt binding for confirmation prompts.
+    /// Enables non-interactive confirmation via CLI options (e.g. <c>--yes</c>).
+    /// </summary>
+    public required Interaction.PromptBinding<bool> ConfirmBinding { get; init; }
+
+    /// <summary>
+    /// Gets the prompt binding for the NuGet config directory prompt.
+    /// Enables non-interactive selection via CLI options (e.g. <c>--nuget-config-dir</c>).
+    /// </summary>
+    public required Interaction.PromptBinding<string?> NuGetConfigDirBinding { get; init; }
 }
 
 /// <summary>
@@ -122,6 +136,11 @@ internal sealed class PublishContext
     public bool Debug { get; init; }
 
     /// <summary>
+    /// Gets whether to start a debug session in the extension for the AppHost.
+    /// </summary>
+    public bool StartDebugSession { get; init; }
+
+    /// <summary>
     /// Gets whether to skip building before running.
     /// </summary>
     public bool NoBuild { get; init; }
@@ -133,6 +152,11 @@ internal sealed class PublishContext
 /// </summary>
 internal interface IAppHostProject
 {
+    /// <summary>
+    /// Gets or sets whether this project type is unsupported in the current environment.
+    /// </summary>
+    bool IsUnsupported { get; set; }
+
     /// <summary>
     /// Gets the unique identifier for this language (e.g., "csharp", "typescript").
     /// Used for configuration storage and CLI arguments.
@@ -191,12 +215,19 @@ internal interface IAppHostProject
 
     /// <summary>
     /// Validates that a candidate file is a valid AppHost for this project type.
-    /// This does deeper validation beyond just file pattern matching.
     /// </summary>
     /// <param name="appHostFile">The candidate AppHost file to validate.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>A validation result indicating if the file is valid and any additional status.</returns>
     Task<AppHostValidationResult> ValidateAppHostAsync(FileInfo appHostFile, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gets the Aspire SDK version used by the specified AppHost.
+    /// </summary>
+    /// <param name="appHostFile">The AppHost file.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>The resolved version using this project type's AppHost model, or <see langword="null"/> when the version is unknown.</returns>
+    Task<string?> GetAspireHostingVersionAsync(FileInfo appHostFile, CancellationToken cancellationToken);
 
     /// <summary>
     /// Adds a package to the AppHost project.

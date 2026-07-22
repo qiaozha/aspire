@@ -1,52 +1,52 @@
-import { useState, useEffect } from 'react'
-import aspireLogo from '/Aspire.png'
-import './App.css'
+import { useState, useEffect } from 'react';
+import aspireLogo from '/Aspire.png';
+import './App.css';
 
 interface WeatherForecast {
-  date: string
-  temperatureC: number
-  temperatureF: number
-  summary: string
+  date: string;
+  temperatureC: number;
+  temperatureF: number;
+  summary: string;
 }
 
 function App() {
-  const [weatherData, setWeatherData] = useState<WeatherForecast[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [useCelsius, setUseCelsius] = useState(false)
+  const [weatherData, setWeatherData] = useState<WeatherForecast[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [useCelsius, setUseCelsius] = useState(false);
 
   const fetchWeatherForecast = async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
     
     try {
-      const response = await fetch('/api/weatherforecast')
+      const response = await fetch('/api/weatherforecast');
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
       
-      const data: WeatherForecast[] = await response.json()
-      setWeatherData(data)
+      const data: WeatherForecast[] = await response.json();
+      setWeatherData(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch weather data')
-      console.error('Error fetching weather forecast:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch weather data');
+      console.error('Error fetching weather forecast:', err);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    fetchWeatherForecast()
-  }, [])
+    fetchWeatherForecast();
+  }, []);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString(undefined, { 
       weekday: 'short', 
       month: 'short', 
       day: 'numeric' 
-    })
-  }
+    });
+  };
 
   return (
     <div className="app-container">
@@ -166,7 +166,7 @@ function App() {
             Learn more about Aspire<span className="visually-hidden"> (opens in new tab)</span>
           </a>
           <a 
-            href="https://github.com/dotnet/aspire" 
+            href="https://github.com/microsoft/aspire" 
             target="_blank" 
             rel="noopener noreferrer"
             className="github-link"
@@ -178,7 +178,7 @@ function App() {
         </nav>
       </footer>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

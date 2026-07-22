@@ -18,23 +18,27 @@ public static class MauiWindowsExtensions
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
     /// <remarks>
     /// This method creates a new Windows platform resource that will run the MAUI application
-    /// targeting the Windows platform using <c>dotnet run</c>. The resource does not auto-start 
+    /// targeting the Windows platform using <c>dotnet run</c>. The resource does not auto-start
     /// and must be explicitly started from the dashboard by clicking the start button.
     /// <para>
     /// The resource name will default to "{projectName}-windows".
+    /// </para>
+    /// <para>
+    /// This overload is not available in polyglot app hosts. Use <see cref="AddWindowsDevice(IResourceBuilder{MauiProjectResource}, string)"/> instead.
     /// </para>
     /// </remarks>
     /// <example>
     /// Add a Windows device to a MAUI project:
     /// <code lang="csharp">
     /// var builder = DistributedApplication.CreateBuilder(args);
-    /// 
+    ///
     /// var maui = builder.AddMauiProject("mauiapp", "../MyMauiApp/MyMauiApp.csproj");
     /// var windowsDevice = maui.AddWindowsDevice();
-    /// 
+    ///
     /// builder.Build().Run();
     /// </code>
     /// </example>
+    [AspireExportIgnore(Reason = "Convenience overload. Use the named overload instead.")]
     public static IResourceBuilder<MauiWindowsPlatformResource> AddWindowsDevice(
         this IResourceBuilder<MauiProjectResource> builder)
     {
@@ -50,9 +54,10 @@ public static class MauiWindowsExtensions
     /// <param name="builder">The MAUI project resource builder.</param>
     /// <param name="name">The name of the Windows device resource.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    /// <ats-returns>The resource builder.</ats-returns>
     /// <remarks>
     /// This method creates a new Windows platform resource that will run the MAUI application
-    /// targeting the Windows platform using <c>dotnet run</c>. The resource does not auto-start 
+    /// targeting the Windows platform using <c>dotnet run</c>. The resource does not auto-start
     /// and must be explicitly started from the dashboard by clicking the start button.
     /// <para>
     /// You can add multiple Windows device resources to a MAUI project by calling this method multiple times with different names.
@@ -62,14 +67,15 @@ public static class MauiWindowsExtensions
     /// Add multiple Windows devices to a MAUI project:
     /// <code lang="csharp">
     /// var builder = DistributedApplication.CreateBuilder(args);
-    /// 
+    ///
     /// var maui = builder.AddMauiProject("mauiapp", "../MyMauiApp/MyMauiApp.csproj");
     /// var windowsDevice1 = maui.AddWindowsDevice("windows-device-1");
     /// var windowsDevice2 = maui.AddWindowsDevice("windows-device-2");
-    /// 
+    ///
     /// builder.Build().Run();
     /// </code>
     /// </example>
+    [AspireExport]
     public static IResourceBuilder<MauiWindowsPlatformResource> AddWindowsDevice(
         this IResourceBuilder<MauiProjectResource> builder,
         [ResourceName] string name)
@@ -91,7 +97,7 @@ public static class MauiWindowsExtensions
             });
 
         // Configure the platform resource with common settings
-        MauiPlatformHelper.ConfigurePlatformResource(
+        var targetFramework = MauiPlatformHelper.ConfigurePlatformResource(
             resourceBuilder,
             projectPath,
             "windows",
@@ -99,6 +105,12 @@ public static class MauiWindowsExtensions
             "net10.0-windows10.0.19041.0",
             OperatingSystem.IsWindows,
             "Desktop");
+
+        resourceBuilder.WithMauiIdeLaunchConfiguration(
+            projectPath,
+            targetFramework,
+            "windows",
+            "device");
 
         return resourceBuilder;
     }

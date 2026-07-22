@@ -11,7 +11,7 @@ Registers a [DataLakeServiceClient](https://learn.microsoft.com/en-us/dotnet/api
 
 ### Install the package
 
-Install the .NET Aspire Azure Storage DataLake library with [NuGet](https://www.nuget.org):
+Install the Aspire Azure Storage DataLake library with [NuGet](https://www.nuget.org):
 
 ```dotnetcli
 dotnet add package Aspire.Azure.Storage.Files.DataLake
@@ -43,7 +43,7 @@ See the [Azure.Storage.Files.DataLake documentation](https://github.com/Azure/az
 
 ## Configuration
 
-The .NET Aspire Azure DataLake Storage library provides multiple options to configure the Azure Data Lake Storage connection based on the requirements and conventions of your project. Note that either a `ServiceUri` or a `ConnectionString` is a required to be supplied.
+The Aspire Azure DataLake Storage library provides multiple options to configure the Azure Data Lake Storage connection based on the requirements and conventions of your project. Note that either a `ServiceUri` or a `ConnectionString` is a required to be supplied.
 
 ### Use a connection string
 
@@ -57,7 +57,7 @@ And then the connection information will be retrieved from the `ConnectionString
 
 #### Service URI
 
-The recommended approach is to use a ServiceUri, which works with the `AzureDataLakeSettings.Credential` property to establish a connection. If no credential is configured, the [DefaultAzureCredential](https://learn.microsoft.com/dotnet/api/azure.identity.defaultazurecredential) is used.
+The recommended approach is to use a ServiceUri, which works with the `AzureDataLakeSettings.Credential` property to establish a connection. If no credential is configured, a [default TokenCredential is created based on the current environment](https://aka.ms/aspire/default-azure-credential).
 
 ```json
 {
@@ -83,7 +83,7 @@ Alternatively, an [Azure Storage connection string](https://learn.microsoft.com/
 
 ### Use configuration providers
 
-The .NET Aspire Azure Data Lake Storage library supports [Microsoft.Extensions.Configuration](https://learn.microsoft.com/dotnet/api/microsoft.extensions.configuration). It loads the `AzureDataLakeSettings` and `DataLakeClientOptions` from configuration by using the `Aspire:Azure:Storage:Files:DataLake` key. Example `appsettings.json` that configures some of the options:
+The Aspire Azure Data Lake Storage library supports [Microsoft.Extensions.Configuration](https://learn.microsoft.com/dotnet/api/microsoft.extensions.configuration). It loads the `AzureDataLakeSettings` and `DataLakeClientOptions` from configuration by using the `Aspire:Azure:Storage:Files:DataLake` key. Example `appsettings.json` that configures some of the options:
 
 ```json
 {
@@ -157,8 +157,8 @@ builder.AddAzureDataLakeFileSystemClient("data-lake-file-system");
 ## Additional documentation
 
 * https://github.com/Azure/azure-sdk-for-net/blob/main/sdk/storage/Azure.Storage.Files.DataLake/README.md
-* https://github.com/dotnet/aspire/tree/main/src/Components/README.md
+* https://github.com/microsoft/aspire/tree/main/src/Components/README.md
 
 ## Feedback & contributing
 
-https://github.com/dotnet/aspire
+https://github.com/microsoft/aspire

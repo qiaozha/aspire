@@ -314,26 +314,65 @@ window.unregisterGlobalKeydownListener = function (obj) {
 };
 
 window.getBrowserInfo = function () {
-    const options = Intl.DateTimeFormat().resolvedOptions();
+    const options = Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions();
 
     return {
         timeZone: options.timeZone,
-        userAgent: navigator.userAgent
+        userAgent: navigator.userAgent,
+        is24HourTime: options.hourCycle === "h23" || options.hourCycle === "h24"
     };
 };
 
-window.focusElement = function (selector) {
+window.focusElement = function (selector, suppressFocusVisible) {
     const element = document.getElementById(selector);
     if (element) {
-        element.focus();
+        if (suppressFocusVisible) {
+            element.focus({ focusVisible: false });
+        } else {
+            element.focus();
+        }
     }
+};
+
+window.initializeMobileNavMenuKeyboardNavigation = function (dotnetHelper, menuId) {
+    const menu = document.getElementById(menuId);
+
+    const keydownListener = function (event) {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            dotnetHelper.invokeMethodAsync("CloseMobileNavMenuFromKeyboardAsync");
+        }
+    };
+
+    const focusoutListener = function (event) {
+        if (!menu.contains(event.relatedTarget)) {
+            dotnetHelper.invokeMethodAsync("CloseMobileNavMenuFromFocusLossAsync");
+        }
+    };
+
+    // Keep Escape-to-close available as soon as the menu opens, including while
+    // focus is still on the navigation button that opened this inline menu.
+    // Do not trap Tab: focusout closes the menu after focus naturally leaves it.
+    document.addEventListener("keydown", keydownListener, true);
+    menu?.addEventListener("focusout", focusoutListener);
+
+    return {
+        keydownListener,
+        focusoutListener,
+        menu
+    };
+};
+
+window.disposeMobileNavMenuKeyboardNavigation = function (obj) {
+    document.removeEventListener("keydown", obj.keydownListener, true);
+    obj.menu?.removeEventListener("focusout", obj.focusoutListener);
 };
 
 window.getWindowDimensions = function() {
     return {
         width: window.innerWidth,
         height: window.innerHeight
-    }
+    };
 }
 
 window.listenToWindowResize = function(dotnetHelper) {
@@ -385,6 +424,13 @@ window.scrollToTop = function (selector) {
     }
 };
 
+window.scrollToElement = function (elementId) {
+    var element = document.getElementById(elementId);
+    if (element) {
+        element.scrollIntoView({ behavior: 'smooth' });
+    }
+};
+
 // taken from https://learn.microsoft.com/en-us/aspnet/core/blazor/file-downloads?view=aspnetcore-8.0#download-from-a-stream
 window.downloadStreamAsFile = async function (fileName, contentStreamReference) {
     const arrayBuffer = await contentStreamReference.arrayBuffer();
@@ -397,23 +443,3 @@ window.downloadStreamAsFile = async function (fileName, contentStreamReference) 
     anchorElement.remove();
     URL.revokeObjectURL(url);
 };
-
-window.attachChatClickEvent = function (containerId, interop) {
-    var container = document.getElementById(containerId);
-    if (!container) {
-        console.log(`Couldn't find container '${containerId}'.`);
-        return;
-    }
-
-    container.addEventListener('click', function (event) {
-        let anchorElement = event.target.closest('a');
-        if (anchorElement) {
-            // Only intercept if the link's host matches the current window's host (same domain)
-            if (anchorElement.host === window.location.host) {
-                event.preventDefault();
-                console.log('Link click intercepted:', anchorElement.href);
-                interop.invokeMethodAsync('NavigateUrl', anchorElement.href);
-            }
-        }
-    });
-}

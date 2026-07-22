@@ -19,14 +19,14 @@ public static class MauiiOSExtensions
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
     /// <remarks>
     /// This method creates a new iOS device platform resource that will run the MAUI application
-    /// targeting the iOS platform using <c>dotnet run</c>. The resource does not auto-start 
+    /// targeting the iOS platform using <c>dotnet run</c>. The resource does not auto-start
     /// and must be explicitly started from the dashboard by clicking the start button.
     /// <para>
     /// The resource name will default to "{projectName}-ios-device".
     /// </para>
     /// <para>
     /// This will run the application on a physical iOS device connected via USB.
-    /// The device must be provisioned before deployment. For more information, see 
+    /// The device must be provisioned before deployment. For more information, see
     /// https://learn.microsoft.com/dotnet/maui/ios/device-provisioning
     /// </para>
     /// <para>
@@ -34,18 +34,22 @@ public static class MauiiOSExtensions
     /// are connected, use the overload with deviceId parameter to specify which device to use by UDID.
     /// You can find the device UDID in Xcode under Window > Devices and Simulators > Devices tab.
     /// </para>
+    /// <para>
+    /// This overload is not available in polyglot app hosts. Use <see cref="AddiOSDevice(IResourceBuilder{MauiProjectResource}, string, string)"/> instead.
+    /// </para>
     /// </remarks>
     /// <example>
     /// Add an iOS device to a MAUI project:
     /// <code lang="csharp">
     /// var builder = DistributedApplication.CreateBuilder(args);
-    /// 
+    ///
     /// var maui = builder.AddMauiProject("mauiapp", "../MyMauiApp/MyMauiApp.csproj");
     /// var iOSDevice = maui.AddiOSDevice();
-    /// 
+    ///
     /// builder.Build().Run();
     /// </code>
     /// </example>
+    [AspireExportIgnore(Reason = "Convenience overload. Use the overload with name and optional device UDID instead.")]
     public static IResourceBuilder<MauiiOSDeviceResource> AddiOSDevice(
         this IResourceBuilder<MauiProjectResource> builder)
     {
@@ -63,7 +67,7 @@ public static class MauiiOSExtensions
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
     /// <remarks>
     /// This method creates a new iOS device platform resource that will run the MAUI application
-    /// targeting the iOS platform using <c>dotnet run</c>. The resource does not auto-start 
+    /// targeting the iOS platform using <c>dotnet run</c>. The resource does not auto-start
     /// and must be explicitly started from the dashboard by clicking the start button.
     /// <para>
     /// Multiple iOS device resources can be added to the same MAUI project if needed, each with
@@ -71,7 +75,7 @@ public static class MauiiOSExtensions
     /// </para>
     /// <para>
     /// This will run the application on a physical iOS device connected via USB.
-    /// The device must be provisioned before deployment. For more information, see 
+    /// The device must be provisioned before deployment. For more information, see
     /// https://learn.microsoft.com/dotnet/maui/ios/device-provisioning
     /// </para>
     /// <para>
@@ -79,19 +83,23 @@ public static class MauiiOSExtensions
     /// are connected, use the overload with deviceId parameter to specify which device to use by UDID.
     /// You can find the device UDID in Xcode under Window > Devices and Simulators > Devices tab.
     /// </para>
+    /// <para>
+    /// This overload is not available in polyglot app hosts. Use <see cref="AddiOSDevice(IResourceBuilder{MauiProjectResource}, string, string)"/> instead.
+    /// </para>
     /// </remarks>
     /// <example>
     /// Add multiple iOS devices to a MAUI project:
     /// <code lang="csharp">
     /// var builder = DistributedApplication.CreateBuilder(args);
-    /// 
+    ///
     /// var maui = builder.AddMauiProject("mauiapp", "../MyMauiApp/MyMauiApp.csproj");
     /// var device1 = maui.AddiOSDevice("ios-device-1");
     /// var device2 = maui.AddiOSDevice("ios-device-2");
-    /// 
+    ///
     /// builder.Build().Run();
     /// </code>
     /// </example>
+    [AspireExportIgnore(Reason = "Convenience overload. Use the overload with the optional device UDID parameter instead.")]
     public static IResourceBuilder<MauiiOSDeviceResource> AddiOSDevice(
         this IResourceBuilder<MauiProjectResource> builder,
         [ResourceName] string name)
@@ -106,9 +114,10 @@ public static class MauiiOSExtensions
     /// <param name="name">The name of the iOS device resource.</param>
     /// <param name="deviceId">Optional device UDID to target a specific iOS device. If not specified, uses the only attached device (requires exactly one device to be connected).</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    /// <ats-returns>The resource builder.</ats-returns>
     /// <remarks>
     /// This method creates a new iOS device platform resource that will run the MAUI application
-    /// targeting the iOS platform using <c>dotnet run</c>. The resource does not auto-start 
+    /// targeting the iOS platform using <c>dotnet run</c>. The resource does not auto-start
     /// and must be explicitly started from the dashboard by clicking the start button.
     /// <para>
     /// Multiple iOS device resources can be added to the same MAUI project if needed, each with
@@ -116,7 +125,7 @@ public static class MauiiOSExtensions
     /// </para>
     /// <para>
     /// This will run the application on a physical iOS device connected via USB.
-    /// The device must be provisioned before deployment. For more information, see 
+    /// The device must be provisioned before deployment. For more information, see
     /// https://learn.microsoft.com/dotnet/maui/ios/device-provisioning
     /// </para>
     /// <para>
@@ -129,18 +138,19 @@ public static class MauiiOSExtensions
     /// Add multiple iOS devices to a MAUI project:
     /// <code lang="csharp">
     /// var builder = DistributedApplication.CreateBuilder(args);
-    /// 
+    ///
     /// var maui = builder.AddMauiProject("mauiapp", "../MyMauiApp/MyMauiApp.csproj");
-    /// 
+    ///
     /// // Default device (only one attached)
     /// var device1 = maui.AddiOSDevice("ios-device-default");
-    /// 
+    ///
     /// // Specific device by UDID
     /// var device2 = maui.AddiOSDevice("ios-device-iphone13", "00008030-001234567890123A");
-    /// 
+    ///
     /// builder.Build().Run();
     /// </code>
     /// </example>
+    [AspireExport]
     public static IResourceBuilder<MauiiOSDeviceResource> AddiOSDevice(
         this IResourceBuilder<MauiProjectResource> builder,
         [ResourceName] string name,
@@ -168,21 +178,27 @@ public static class MauiiOSExtensions
         // and RuntimeIdentifier must be ios-arm64 for physical devices
         // See: https://learn.microsoft.com/dotnet/maui/ios/cli#launch-the-app-on-a-device
         // Format: -p:_DeviceName=<UDID> -p:RuntimeIdentifier=ios-arm64
+        var runtimeIdentifier = "ios-arm64";
+        var msBuildProperties = new Dictionary<string, string>
+        {
+            [KnownMauiMSBuildProperties.RuntimeIdentifier] = runtimeIdentifier
+        };
         var additionalArgs = new List<string>();
-        
+
         // iOS devices always need RuntimeIdentifier=ios-arm64
-        additionalArgs.Add("-p:RuntimeIdentifier=ios-arm64");
-        
+        additionalArgs.Add($"-p:{KnownMauiMSBuildProperties.RuntimeIdentifier}={runtimeIdentifier}");
+
         if (!string.IsNullOrWhiteSpace(deviceId))
         {
             // Specific device - use the UDID directly (no :v2:udid= prefix for devices)
-            additionalArgs.Add($"-p:_DeviceName={deviceId}");
+            msBuildProperties[KnownMauiMSBuildProperties.DeviceName] = deviceId;
+            additionalArgs.Add($"-p:{KnownMauiMSBuildProperties.DeviceName}={deviceId}");
         }
         // If no device ID specified, dotnet run will use the only attached device
 
         // Configure the platform resource with common settings
         // iOS runs only on macOS - check for macOS platform
-        MauiPlatformHelper.ConfigurePlatformResource(
+        var targetFramework = MauiPlatformHelper.ConfigurePlatformResource(
             resourceBuilder,
             projectPath,
             "ios",
@@ -191,6 +207,15 @@ public static class MauiiOSExtensions
             OperatingSystem.IsMacOS, // iOS development requires macOS
             "PhoneTablet",
             additionalArgs.ToArray());
+
+        resourceBuilder.WithMauiIdeLaunchConfiguration(
+            projectPath,
+            targetFramework,
+            "ios",
+            "device",
+            deviceId,
+            runtimeIdentifier,
+            msBuildProperties);
 
         // Validate device ID format before starting the resource
         if (!string.IsNullOrWhiteSpace(deviceId))
@@ -220,7 +245,7 @@ public static class MauiiOSExtensions
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
     /// <remarks>
     /// This method creates a new iOS simulator platform resource that will run the MAUI application
-    /// targeting the iOS platform using <c>dotnet run</c>. The resource does not auto-start 
+    /// targeting the iOS platform using <c>dotnet run</c>. The resource does not auto-start
     /// and must be explicitly started from the dashboard by clicking the start button.
     /// <para>
     /// The resource name will default to "{projectName}-ios-simulator".
@@ -230,18 +255,22 @@ public static class MauiiOSExtensions
     /// Xcode will launch the default simulator. To target a specific simulator, use the overload with
     /// simulatorId parameter.
     /// </para>
+    /// <para>
+    /// This overload is not available in polyglot app hosts. Use <see cref="AddiOSSimulator(IResourceBuilder{MauiProjectResource}, string, string)"/> instead.
+    /// </para>
     /// </remarks>
     /// <example>
     /// Add an iOS simulator to a MAUI project:
     /// <code lang="csharp">
     /// var builder = DistributedApplication.CreateBuilder(args);
-    /// 
+    ///
     /// var maui = builder.AddMauiProject("mauiapp", "../MyMauiApp/MyMauiApp.csproj");
     /// var iOSSimulator = maui.AddiOSSimulator();
-    /// 
+    ///
     /// builder.Build().Run();
     /// </code>
     /// </example>
+    [AspireExportIgnore(Reason = "Convenience overload. Use the overload with name and optional simulator UDID instead.")]
     public static IResourceBuilder<MauiiOSSimulatorResource> AddiOSSimulator(
         this IResourceBuilder<MauiProjectResource> builder)
     {
@@ -259,7 +288,7 @@ public static class MauiiOSExtensions
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
     /// <remarks>
     /// This method creates a new iOS simulator platform resource that will run the MAUI application
-    /// targeting the iOS platform using <c>dotnet run</c>. The resource does not auto-start 
+    /// targeting the iOS platform using <c>dotnet run</c>. The resource does not auto-start
     /// and must be explicitly started from the dashboard by clicking the start button.
     /// <para>
     /// Multiple iOS simulator resources can be added to the same MAUI project if needed, each with
@@ -270,19 +299,23 @@ public static class MauiiOSExtensions
     /// Xcode will launch the default simulator. To target a specific simulator, use the overload with
     /// simulatorId parameter.
     /// </para>
+    /// <para>
+    /// This overload is not available in polyglot app hosts. Use <see cref="AddiOSSimulator(IResourceBuilder{MauiProjectResource}, string, string)"/> instead.
+    /// </para>
     /// </remarks>
     /// <example>
     /// Add multiple iOS simulators to a MAUI project:
     /// <code lang="csharp">
     /// var builder = DistributedApplication.CreateBuilder(args);
-    /// 
+    ///
     /// var maui = builder.AddMauiProject("mauiapp", "../MyMauiApp/MyMauiApp.csproj");
     /// var simulator1 = maui.AddiOSSimulator("ios-simulator-1");
     /// var simulator2 = maui.AddiOSSimulator("ios-simulator-2");
-    /// 
+    ///
     /// builder.Build().Run();
     /// </code>
     /// </example>
+    [AspireExportIgnore(Reason = "Convenience overload. Use the overload with the optional simulator UDID parameter instead.")]
     public static IResourceBuilder<MauiiOSSimulatorResource> AddiOSSimulator(
         this IResourceBuilder<MauiProjectResource> builder,
         [ResourceName] string name)
@@ -297,9 +330,10 @@ public static class MauiiOSExtensions
     /// <param name="name">The name of the iOS simulator resource.</param>
     /// <param name="simulatorId">Optional simulator UDID to target a specific iOS simulator. If not specified, uses the default simulator.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    /// <ats-returns>The resource builder.</ats-returns>
     /// <remarks>
     /// This method creates a new iOS simulator platform resource that will run the MAUI application
-    /// targeting the iOS platform using <c>dotnet run</c>. The resource does not auto-start 
+    /// targeting the iOS platform using <c>dotnet run</c>. The resource does not auto-start
     /// and must be explicitly started from the dashboard by clicking the start button.
     /// <para>
     /// Multiple iOS simulator resources can be added to the same MAUI project if needed, each with
@@ -315,18 +349,19 @@ public static class MauiiOSExtensions
     /// Add multiple iOS simulators to a MAUI project:
     /// <code lang="csharp">
     /// var builder = DistributedApplication.CreateBuilder(args);
-    /// 
+    ///
     /// var maui = builder.AddMauiProject("mauiapp", "../MyMauiApp/MyMauiApp.csproj");
-    /// 
+    ///
     /// // Default simulator
     /// var simulator1 = maui.AddiOSSimulator("ios-simulator-default");
-    /// 
+    ///
     /// // Specific simulator by UDID
     /// var simulator2 = maui.AddiOSSimulator("ios-simulator-iphone15", "E25BBE37-69BA-4720-B6FD-D54C97791E79");
-    /// 
+    ///
     /// builder.Build().Run();
     /// </code>
     /// </example>
+    [AspireExport]
     public static IResourceBuilder<MauiiOSSimulatorResource> AddiOSSimulator(
         this IResourceBuilder<MauiProjectResource> builder,
         [ResourceName] string name,
@@ -353,18 +388,20 @@ public static class MauiiOSExtensions
         // For iOS simulators, we need to use the MSBuild property _DeviceName with the :v2:udid= prefix
         // See: https://learn.microsoft.com/dotnet/maui/ios/cli#launch-the-app-on-a-specific-simulator
         // Format: -p:_DeviceName=:v2:udid=<UDID>
+        var msBuildProperties = new Dictionary<string, string>();
         var additionalArgs = new List<string>();
-        
+
         if (!string.IsNullOrWhiteSpace(simulatorId))
         {
             // Specific simulator - use :v2:udid= prefix (note: no quotes around the value to avoid Android issue)
-            additionalArgs.Add($"-p:_DeviceName=:v2:udid={simulatorId}");
+            msBuildProperties[KnownMauiMSBuildProperties.DeviceName] = $":v2:udid={simulatorId}";
+            additionalArgs.Add($"-p:{KnownMauiMSBuildProperties.DeviceName}={msBuildProperties[KnownMauiMSBuildProperties.DeviceName]}");
         }
         // If no simulator ID specified, dotnet run will use the default simulator
 
         // Configure the platform resource with common settings
         // iOS runs only on macOS - check for macOS platform
-        MauiPlatformHelper.ConfigurePlatformResource(
+        var targetFramework = MauiPlatformHelper.ConfigurePlatformResource(
             resourceBuilder,
             projectPath,
             "ios",
@@ -373,6 +410,14 @@ public static class MauiiOSExtensions
             OperatingSystem.IsMacOS, // iOS development requires macOS
             "PhoneTablet",
             additionalArgs.ToArray());
+
+        resourceBuilder.WithMauiIdeLaunchConfiguration(
+            projectPath,
+            targetFramework,
+            "ios",
+            "simulator",
+            simulatorId,
+            msBuildProperties: msBuildProperties.Count > 0 ? msBuildProperties : null);
 
         // Validate simulator ID format before starting the resource
         if (!string.IsNullOrWhiteSpace(simulatorId))

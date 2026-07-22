@@ -45,7 +45,11 @@ internal enum InputType
     /// <summary>
     /// A numeric input.
     /// </summary>
-    Number
+    Number,
+    /// <summary>
+    /// A file input. Allows the user to select a file.
+    /// </summary>
+    File
 }
 
 internal sealed class EnvVar
@@ -57,4 +61,22 @@ internal sealed class EnvVar
     // Value of the environment variable
     [JsonPropertyName("value")]
     public string? Value { get; set; }
+}
+
+/// <summary>
+/// Options passed when starting a debug session from the CLI to the extension.
+/// </summary>
+internal sealed class DebugSessionOptions
+{
+    /// <summary>
+    /// Gets or sets the command type for the debug session (e.g., "run", "deploy", "publish", "do").
+    /// </summary>
+    [JsonPropertyName("command")]
+    public string? Command { get; set; }
+
+    /// <summary>
+    /// Gets or sets additional arguments to pass to the command (e.g., step name for "do", unmatched tokens).
+    /// </summary>
+    [JsonPropertyName("args")]
+    public string[]? Args { get; set; }
 }

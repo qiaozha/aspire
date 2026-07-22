@@ -2,14 +2,12 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Globalization;
-using Aspire.Dashboard.Components.Controls;
 using Aspire.Dashboard.Components.Dialogs;
 using Aspire.Dashboard.Components.Layout;
 using Aspire.Dashboard.Configuration;
 using Aspire.Dashboard.Extensions;
 using Aspire.Dashboard.Model;
-using Aspire.Dashboard.Model.Assistant;
-using Aspire.Dashboard.Model.Assistant.Prompts;
+using Aspire.Dashboard.Model.GenAI;
 using Aspire.Dashboard.Model.Otlp;
 using Aspire.Dashboard.Otlp.Model;
 using Aspire.Dashboard.Otlp.Storage;
@@ -25,6 +23,7 @@ namespace Aspire.Dashboard.Components.Pages;
 
 public partial class Traces : IComponentWithTelemetry, IPageWithSessionAndUrlState<Traces.TracesPageViewModel, Traces.TracesPageState>
 {
+    private const string ScrollContainerId = "tracesScrollContainer";
     private const string TimestampColumn = nameof(TimestampColumn);
     private const string NameColumn = nameof(NameColumn);
     private const string SpansColumn = nameof(SpansColumn);
@@ -34,7 +33,6 @@ public partial class Traces : IComponentWithTelemetry, IPageWithSessionAndUrlSta
     private SelectViewModel<ResourceTypeDetails> _allResource = null!;
 
     private TotalItemsFooter _totalItemsFooter = default!;
-    private ExplainErrorsButton? _explainErrorsButton;
     private int _totalItemsCount;
     private List<SelectViewModel<SpanType>> _spanTypes = default!;
     private List<OtlpResource> _resources = default!;
@@ -49,7 +47,6 @@ public partial class Traces : IComponentWithTelemetry, IPageWithSessionAndUrlSta
 
     private ColumnResizeLabels _resizeLabels = ColumnResizeLabels.Default;
     private ColumnSortLabels _sortLabels = ColumnSortLabels.Default;
-    private AIContext? _aiContext;
 
     public string SessionStorageKey => BrowserStorageKeys.TracesPageState;
     public string BasePath => DashboardUrls.TracesBasePath;
@@ -89,13 +86,13 @@ public partial class Traces : IComponentWithTelemetry, IPageWithSessionAndUrlSta
     public required DimensionManager DimensionManager { get; init; }
 
     [Inject]
-    public required IAIContextProvider AIContextProvider { get; init; }
-
-    [Inject]
     public required PauseManager PauseManager { get; init; }
 
     [Inject]
     public required ComponentTelemetryContextProvider TelemetryContextProvider { get; init; }
+
+    [Inject]
+    public required ITelemetryErrorRecorder ErrorRecorder { get; init; }
 
     [CascadingParameter]
     public required ViewportInformation ViewportInformation { get; set; }
@@ -158,16 +155,12 @@ public partial class Traces : IComponentWithTelemetry, IPageWithSessionAndUrlSta
         _totalItemsCount = traces.TotalItemCount;
         _totalItemsFooter.UpdateDisplayedCount(_totalItemsCount);
 
-        _explainErrorsButton?.UpdateHasErrors(TracesViewModel.HasErrors());
-        _aiContext?.ContextHasChanged();
-
         return GridItemsProviderResult.From(traces.Items, traces.TotalItemCount);
     }
 
     protected override void OnInitialized()
     {
         TelemetryContextProvider.Initialize(TelemetryContext);
-        _aiContext = CreateAIContext();
 
         (_resizeLabels, _sortLabels) = DashboardUIHelpers.CreateGridLabels(ControlsStringsLoc);
 
@@ -200,8 +193,6 @@ public partial class Traces : IComponentWithTelemetry, IPageWithSessionAndUrlSta
 
         TracesViewModel.ResourceKey = PageViewModel.SelectedResource.Id?.GetResourceKey();
         UpdateSubscription();
-
-        _aiContext?.ContextHasChanged();
     }
 
     private void UpdateResources()
@@ -278,6 +269,9 @@ public partial class Traces : IComponentWithTelemetry, IPageWithSessionAndUrlSta
         if (firstRender)
         {
             await JS.InvokeVoidAsync("initializeContinuousScroll");
+            // Focus the scroll container without showing the focus ring. The container is a large
+            // content area where a visible focus indicator would be visually noisy on initial load.
+            await JS.InvokeVoidAsync("focusElement", ScrollContainerId, true);
             DimensionManager.OnViewportInformationChanged += OnBrowserResize;
         }
     }
@@ -300,7 +294,6 @@ public partial class Traces : IComponentWithTelemetry, IPageWithSessionAndUrlSta
 
     public void Dispose()
     {
-        _aiContext?.Dispose();
         _resourcesSubscription?.Dispose();
         _tracesSubscription?.Dispose();
         DimensionManager.OnViewportInformationChanged -= OnBrowserResize;
@@ -358,24 +351,14 @@ public partial class Traces : IComponentWithTelemetry, IPageWithSessionAndUrlSta
             await _contentLayout.CloseMobileToolbarAsync();
         }
 
-        var title = entry is not null ? FilterLoc[nameof(StructuredFiltering.DialogTitleEditFilter)] : FilterLoc[nameof(StructuredFiltering.DialogTitleAddFilter)];
-        var parameters = new DialogParameters
-        {
-            OnDialogResult = DialogService.CreateDialogCallback(this, HandleFilterDialog),
-            Title = title,
-            Alignment = HorizontalAlignment.Right,
-            PrimaryAction = null,
-            SecondaryAction = null,
-            Width = "450px"
-        };
-        var data = new FilterDialogViewModel
-        {
-            Filter = entry,
-            PropertyKeys = TelemetryRepository.GetTracePropertyKeys(PageViewModel.SelectedResource.Id?.GetResourceKey()),
-            KnownKeys = KnownTraceFields.AllFields,
-            GetFieldValues = TelemetryRepository.GetTraceFieldValues
-        };
-        await DialogService.ShowPanelAsync<FilterDialog>(data, parameters);
+        await FilterHelpers.OpenFilterAsync(
+            entry,
+            DialogService,
+            DialogService.CreateDialogCallback(this, HandleFilterDialog),
+            propertyKeys: TelemetryRepository.GetTracePropertyKeys(PageViewModel.SelectedResource.Id?.GetResourceKey()),
+            knownKeys: KnownTraceFields.AllFields,
+            getFieldValues: TelemetryRepository.GetTraceFieldValues,
+            FilterLoc);
     }
 
     private async Task HandleFilterDialog(DialogResult result)
@@ -403,15 +386,6 @@ public partial class Traces : IComponentWithTelemetry, IPageWithSessionAndUrlSta
         await this.AfterViewModelChangedAsync(_contentLayout, waitToApplyMobileChange: false);
     }
 
-    private async Task ExplainErrorsAsync()
-    {
-        await AIContextProvider.LaunchAssistantSidebarAsync(
-            promptContext => PromptContextsBuilder.ErrorTraces(
-                promptContext,
-                AIPromptsLoc[nameof(AIPrompts.PromptErrorTraces)],
-                () => TracesViewModel.GetErrorTraces(count: int.MaxValue)));
-    }
-
     private Task ClearTraces(ResourceKey? key)
     {
         TelemetryRepository.ClearTraces(key);
@@ -420,32 +394,52 @@ public partial class Traces : IComponentWithTelemetry, IPageWithSessionAndUrlSta
 
     private List<MenuButtonItem> GetFilterMenuItems()
     {
-        return this.GetFilterMenuItems(
+        return FilterHelpers.GetFilterMenuItems(
             TracesViewModel.Filters,
             clearFilters: TracesViewModel.ClearFilters,
             openFilterAsync: OpenFilterAsync,
+            afterChangeAsync: () => this.AfterViewModelChangedAsync(_contentLayout, waitToApplyMobileChange: false),
             filterLoc: FilterLoc,
-            dialogsLoc: DialogsLoc,
-            contentLayout: _contentLayout);
+            dialogsLoc: DialogsLoc);
     }
 
-    private AIContext CreateAIContext()
+    private static bool HasGenAISpans(OtlpTrace trace)
     {
-        return AIContextProvider.AddNew(nameof(Traces), c =>
+        foreach (var span in trace.Spans)
         {
-            c.BuildIceBreakers = (builder, context) =>
+            if (GenAIHelpers.HasGenAIAttribute(span.Attributes))
             {
-                var resource = _resources?.SingleOrDefault(a => a.ResourceKey == PageViewModel.SelectedResource.Id?.GetResourceKey());
-                if (resource != null)
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private async Task OnGenAIClickedAsync(OtlpTrace trace)
+    {
+        var firstSpan = trace.Spans.FirstOrDefault(s => GenAIHelpers.HasGenAIAttribute(s.Attributes));
+        if (firstSpan == null)
+        {
+            return;
+        }
+
+        await GenAIVisualizerDialog.OpenDialogAsync(
+            DialogService,
+            firstSpan,
+            selectedLogEntryId: null,
+            TelemetryRepository,
+            ErrorRecorder,
+            _resources,
+            () =>
+            {
+                var latestTrace = TelemetryRepository.GetTrace(trace.TraceId);
+                if (latestTrace is null)
                 {
-                    builder.Traces(context, resource, TracesViewModel.GetTraces, TracesViewModel.HasErrors(), () => TracesViewModel.GetErrorTraces(int.MaxValue));
+                    return [];
                 }
-                else
-                {
-                    builder.Traces(context, TracesViewModel.GetTraces, TracesViewModel.HasErrors(), () => TracesViewModel.GetErrorTraces(int.MaxValue));
-                }
-            };
-        });
+                return latestTrace.Spans.Where(span => GenAIHelpers.HasGenAIAttribute(span.Attributes)).ToList();
+            });
     }
 
     public class TracesPageViewModel

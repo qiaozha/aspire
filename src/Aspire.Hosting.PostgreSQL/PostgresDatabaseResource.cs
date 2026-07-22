@@ -14,6 +14,7 @@ namespace Aspire.Hosting.ApplicationModel;
 /// <param name="name">The name of the resource.</param>
 /// <param name="databaseName">The database name.</param>
 /// <param name="postgresParentResource">The PostgreSQL parent resource associated with this database.</param>
+/// <ats-summary>A resource that represents a PostgreSQL database. This is a child resource of a <ats-see cref="!:type:PostgresServerResource" />.</ats-summary>
 [DebuggerDisplay("Type = {GetType().Name,nq}, Name = {Name}, Database = {DatabaseName}")]
 [AspireExport(ExposeProperties = true)]
 public class PostgresDatabaseResource(string name, string databaseName, PostgresServerResource postgresParentResource)
@@ -27,8 +28,6 @@ public class PostgresDatabaseResource(string name, string databaseName, Postgres
     /// <summary>
     /// Gets the connection string expression for the Postgres database.
     /// </summary>
-    /// <remarks>This property is not available in polyglot app hosts.</remarks>
-    [AspireExportIgnore]
     public ReferenceExpression ConnectionStringExpression
     {
         get

@@ -1,0 +1,182 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+using System.ClientModel.Primitives;
+using System.Text.Json.Nodes;
+using Azure.AI.Projects.Agents;
+
+namespace Aspire.Hosting.Foundry.Tests;
+
+public class HostedAgentConfigurationTests
+{
+    [Fact]
+    public void DefaultCpu_Is2()
+    {
+        var config = new HostedAgentConfiguration("myimage:latest");
+        Assert.Equal(2.0m, config.Cpu);
+    }
+
+    [Fact]
+    public void DefaultMemory_Is4()
+    {
+        var config = new HostedAgentConfiguration("myimage:latest");
+        Assert.Equal(4.0m, config.Memory);
+    }
+
+    [Fact]
+    public void CpuString_FormatsCorrectly()
+    {
+        var config = new HostedAgentConfiguration("myimage:latest") { Cpu = 1.5m };
+        Assert.Equal("1.5", config.CpuString);
+    }
+
+    [Fact]
+    public void MemoryString_FormatsCorrectly()
+    {
+        var config = new HostedAgentConfiguration("myimage:latest") { Cpu = 1.5m };
+        Assert.Equal("3.0Gi", config.MemoryString);
+    }
+
+    [Fact]
+    public void Cpu_ThrowsForInvalidValues()
+    {
+        var config = new HostedAgentConfiguration("myimage:latest");
+        Assert.Throws<ArgumentException>(() => config.Cpu = 0.1m);
+        Assert.Throws<ArgumentException>(() => config.Cpu = 4.0m);
+        Assert.Throws<ArgumentException>(() => config.Cpu = 1.1m); // Not a 0.25 increment
+    }
+
+    [Fact]
+    public void Memory_ThrowsForInvalidValues()
+    {
+        var config = new HostedAgentConfiguration("myimage:latest");
+        Assert.Throws<ArgumentException>(() => config.Memory = 0.5m);
+        Assert.Throws<ArgumentException>(() => config.Memory = 8.0m);
+        Assert.Throws<ArgumentException>(() => config.Memory = 1.3m); // Not a 0.5 increment
+    }
+
+    [Fact]
+    public void Image_IsSetFromConstructor()
+    {
+        var config = new HostedAgentConfiguration("myregistry.azurecr.io/myagent:v1");
+        Assert.Equal("myregistry.azurecr.io/myagent:v1", config.Image);
+    }
+
+    [Fact]
+    public void ToProjectsAgentVersionCreationOptions_ProducesValidOptions()
+    {
+        var config = new HostedAgentConfiguration("myimage:latest")
+        {
+            Description = "Test agent",
+            Cpu = 1.0m,
+        };
+        config.ProtocolVersions.Add(new ProtocolVersionRecord(ProjectsAgentProtocol.Responses, "2.0.0"));
+
+        var options = config.ToProjectsAgentVersionCreationOptions("target");
+
+        Assert.NotNull(options);
+        Assert.Equal("Test agent", options.Description);
+    }
+
+    [Fact]
+    public void ToProjectsAgentVersionCreationOptions_UsesProtocolVersionsAndContainerConfiguration()
+    {
+        var config = new HostedAgentConfiguration("myregistry.azurecr.io/myagent:v1");
+        config.ProtocolVersions.Add(new ProtocolVersionRecord(ProjectsAgentProtocol.Responses, "2.0.0"));
+
+        var options = config.ToProjectsAgentVersionCreationOptions("target");
+        var payload = JsonNode.Parse(ModelReaderWriter.Write(options, ModelReaderWriterOptions.Json).ToString())!;
+        var definition = payload["definition"]!;
+
+        var protocolVersion = Assert.Single(definition["protocol_versions"]!.AsArray());
+        Assert.Equal(ProjectsAgentProtocol.Responses.ToString(), protocolVersion!["protocol"]!.GetValue<string>());
+        Assert.Equal("2.0.0", protocolVersion["version"]!.GetValue<string>());
+        Assert.Equal("myregistry.azurecr.io/myagent:v1", definition["container_configuration"]!["image"]!.GetValue<string>());
+        Assert.Null(definition["container_protocol_versions"]);
+        Assert.Null(definition["image"]);
+    }
+
+    [Fact]
+    public void ToProjectsAgentVersionCreationOptions_ThrowsWhenProtocolVersionIsNotDeclared()
+    {
+        var config = new HostedAgentConfiguration("myregistry.azurecr.io/myagent:v1");
+
+        var ex = Assert.Throws<DistributedApplicationException>(() => config.ToProjectsAgentVersionCreationOptions("target"));
+
+        Assert.Equal("Foundry hosted agent for target resource 'target' must declare at least one protocol version.", ex.Message);
+    }
+
+    [Fact]
+    public void EnsureProtocolVersions_AddsDefaultResponsesProtocolWhenEmpty()
+    {
+        var config = new HostedAgentConfiguration("myregistry.azurecr.io/myagent:v1");
+
+        AzureHostedAgentResource.EnsureProtocolVersions(config);
+
+        var protocol = Assert.Single(config.ProtocolVersions);
+        Assert.Equal(ProjectsAgentProtocol.Responses, protocol.Protocol);
+        Assert.Equal("2.0.0", protocol.Version);
+    }
+
+    [Fact]
+    public void EnsureProtocolVersions_PreservesDeclaredProtocol()
+    {
+        var config = new HostedAgentConfiguration("myregistry.azurecr.io/myagent:v1");
+        config.ProtocolVersions.Add(new ProtocolVersionRecord(ProjectsAgentProtocol.Invocations, "1.0.0"));
+
+        AzureHostedAgentResource.EnsureProtocolVersions(config);
+
+        var protocol = Assert.Single(config.ProtocolVersions);
+        Assert.Equal(ProjectsAgentProtocol.Invocations, protocol.Protocol);
+        Assert.Equal("1.0.0", protocol.Version);
+    }
+
+    [Fact]
+    public void EnvironmentVariables_CanBeAdded()
+    {
+        var config = new HostedAgentConfiguration("myimage:latest");
+        config.EnvironmentVariables["KEY"] = "VALUE";
+
+        Assert.Single(config.EnvironmentVariables);
+        Assert.Equal("VALUE", config.EnvironmentVariables["KEY"]);
+    }
+
+    [Fact]
+    public void ToProjectsAgentVersionCreationOptions_ThrowsForInvalidEnvironmentVariableNames()
+    {
+        var config = new HostedAgentConfiguration("myimage:latest");
+        config.EnvironmentVariables["VALID_NAME_1"] = "value";
+        config.EnvironmentVariables["INVALID-NAME"] = "value";
+        config.EnvironmentVariables["invalid.name"] = "value";
+
+        var ex = Assert.Throws<DistributedApplicationException>(() => config.ToProjectsAgentVersionCreationOptions("target"));
+
+        Assert.Equal(
+            "Foundry hosted agent for target resource 'target' contains environment variable names that are not supported by Foundry Hosted Agents. Environment variable names must contain only ASCII letters, digits, or underscores. Invalid name(s): 'INVALID-NAME', 'invalid.name'",
+            ex.Message);
+    }
+
+    [Fact]
+    public void ToProjectsAgentVersionCreationOptions_ThrowsForReservedEnvironmentVariableNames()
+    {
+        var config = new HostedAgentConfiguration("myimage:latest");
+        config.EnvironmentVariables["PORT"] = "8000";
+        config.EnvironmentVariables["AGENT_NAME"] = "agent";
+        config.EnvironmentVariables["FOUNDRY_MODE"] = "hosted";
+
+        var ex = Assert.Throws<DistributedApplicationException>(() => config.ToProjectsAgentVersionCreationOptions("target"));
+
+        Assert.Equal(
+            "Foundry hosted agent for target resource 'target' contains environment variable names that are reserved by Foundry Hosted Agents. Reserved name(s): 'AGENT_NAME', 'FOUNDRY_MODE', 'PORT'",
+            ex.Message);
+    }
+
+    [Fact]
+    public void DefaultMetadata_ContainsDeployedByAndOn()
+    {
+        var config = new HostedAgentConfiguration("myimage:latest");
+
+        Assert.Contains(config.Metadata, kvp => kvp.Key == "DeployedBy");
+        Assert.Contains(config.Metadata, kvp => kvp.Key == "DeployedOn");
+    }
+}

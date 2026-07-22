@@ -17,10 +17,7 @@ public class ConformanceTests : ConformanceTests<SearchIndexClient, AzureSearchS
 
     protected override ServiceLifetime ServiceLifetime => ServiceLifetime.Singleton;
 
-    protected override string[] RequiredLogCategories => [
-        "Azure.Core",
-        "Azure.Identity"
-    ];
+    protected override RequiredLogCategory[] RequiredLogCategories => [new("Azure.Identity")];
 
     protected override bool SupportsKeyedRegistrations => true;
 

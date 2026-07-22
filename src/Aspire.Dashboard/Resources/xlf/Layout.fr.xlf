@@ -17,9 +17,24 @@
         <target state="translated">Référentiel Aspire</target>
         <note />
       </trans-unit>
+      <trans-unit id="MainLayoutLaunchAIAgents">
+        <source>AI agents</source>
+        <target state="new">AI agents</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="MainLayoutLaunchNotifications">
+        <source>Notifications</source>
+        <target state="new">Notifications</target>
+        <note />
+      </trans-unit>
       <trans-unit id="MainLayoutLaunchSettings">
         <source>Settings</source>
         <target state="translated">Paramètres</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="MainLayoutNotificationCenterTitle">
+        <source>Notifications</source>
+        <target state="new">Notifications</target>
         <note />
       </trans-unit>
       <trans-unit id="MainLayoutSettingsDialogClose">
@@ -50,11 +65,6 @@
       <trans-unit id="MessageUnsecuredEndpointLink">
         <source>More information</source>
         <target state="translated">Autres informations</target>
-        <note />
-      </trans-unit>
-      <trans-unit id="MessageUnsecuredEndpointMcpBody">
-        <source>Untrusted apps can access sensitive information about the running services.</source>
-        <target state="translated">Des applications non approuvées peuvent accéder à des informations sensibles sur les services en cours d’exécution.</target>
         <note />
       </trans-unit>
       <trans-unit id="MessageUnsecuredEndpointTelemetryBody">
@@ -95,26 +105,6 @@
       <trans-unit id="PageLayoutViewFilters">
         <source>View filters</source>
         <target state="translated">Afficher les filtres</target>
-        <note />
-      </trans-unit>
-      <trans-unit id="ReconnectFailedText">
-        <source>Failed to rejoin.&lt;br /&gt;Please retry or reload the page.</source>
-        <target state="translated">Échec de la reconnexion.&lt;br /&gt;Veuillez réessayer ou recharger la page.</target>
-        <note />
-      </trans-unit>
-      <trans-unit id="ReconnectFirstAttemptText">
-        <source>Rejoining the server...</source>
-        <target state="translated">Rejoindre le serveur...</target>
-        <note />
-      </trans-unit>
-      <trans-unit id="ReconnectRepeatedAttemptText">
-        <source>Rejoin failed... trying again in &lt;span id="components-seconds-to-next-attempt"&gt;&lt;/span&gt; seconds.</source>
-        <target state="translated">Échec de la reconnexion... nouvelle tentative dans &lt;span id="components-seconds-to-next-attempt"&gt;&lt;/span&gt; secondes.</target>
-        <note />
-      </trans-unit>
-      <trans-unit id="ReconnectRetryButtonText">
-        <source>Retry</source>
-        <target state="translated">Réessayer</target>
         <note />
       </trans-unit>
     </body>
